@@ -1,0 +1,19 @@
+{
+  "name": "@draftrr/extension",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wxt build",
+    "lint": "eslint entrypoints && prettier --check entrypoints",
+    "lint:fix": "eslint --fix entrypoints && prettier --write entrypoints",
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "test": "echo 'no extension unit tests'",
+    "serve": "wxt"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.313",
+    "typescript": "^5.8.2",
+    "wxt": "^0.20.0"
+  }
+}
