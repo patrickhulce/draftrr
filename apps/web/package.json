@@ -1,0 +1,40 @@
+{
+  "name": "@draftrr/web",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "lint": "eslint app components lib && prettier --check app components lib",
+    "lint:fix": "eslint --fix app components lib && prettier --write app components lib",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm test:e2e",
+    "test:e2e": "playwright test",
+    "serve": "next dev --port 3000"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@draftrr/core": "workspace:*",
+    "@tanstack/react-virtual": "^3.13.5",
+    "clsx": "^2.1.1",
+    "dexie": "^4.0.11",
+    "dexie-react-hooks": "^1.1.7",
+    "lucide-react": "^0.483.0",
+    "next": "^15.2.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sonner": "^2.0.1",
+    "tailwind-merge": "^3.0.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.51.1",
+    "@types/node": "^22.13.10",
+    "@types/react": "^19.0.12",
+    "@types/react-dom": "^19.0.4",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.2"
+  }
+}

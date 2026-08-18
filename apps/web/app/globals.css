@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: #0b1220;
+  color: #e8eef7;
+  min-height: 100%;
+}
+
+body {
+  font-feature-settings: 'ss01';
+}
+
+.tier-line {
+  cursor: row-resize;
+}
+
+.pos-QB {
+  color: #f5b942;
+}
+.pos-RB {
+  color: #5ec48a;
+}
+.pos-WR {
+  color: #6cb6ff;
+}
+.pos-TE {
+  color: #d08cff;
+}
+.pos-DST {
+  color: #ff8b6b;
+}
+.pos-K {
+  color: #9aa4b2;
+}
