@@ -1,6 +1,7 @@
 export * from './types.js';
 export * from './defaults.js';
 export * from './league.js';
+export * from './history.js';
 export * from './players/names.js';
 export * from './players/distance.js';
 export * from './players/ids.js';
