@@ -23,7 +23,9 @@ export function sendMessage(message: object, onResponse?: (res: unknown) => void
   }
 }
 
-export function onRuntimeMessage(handler: (message: { type?: string } & Record<string, unknown>) => void): void {
+export function onRuntimeMessage(
+  handler: (message: { type?: string } & Record<string, unknown>) => void,
+): void {
   if (!extensionAlive()) return;
   try {
     chrome.runtime.onMessage.addListener((message) => {

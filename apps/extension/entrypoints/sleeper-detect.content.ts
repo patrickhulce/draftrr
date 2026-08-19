@@ -1,3 +1,4 @@
+import { boardSignature, readDraftBoard } from '~/lib/draftBoard';
 import { parseSleeperDraftId } from '~/lib/draftId';
 import { onRuntimeMessage, sendMessage } from '~/lib/runtime';
 
@@ -58,11 +59,13 @@ export default defineContentScript({
         hideBadge();
         return;
       }
+      const board = readDraftBoard();
       sendMessage(
         {
           type: 'draftrr:sleeper-heartbeat',
           draftId,
           draftName: draftNameFromPage(),
+          board,
         },
         (res) => {
           const live = Boolean((res as { appLive?: boolean } | undefined)?.appLive);
@@ -90,48 +93,27 @@ export default defineContentScript({
       }
     });
 
-    let lastPickSig = '';
-    let pickTimer: number | undefined;
-    const pingPicks = () => {
+    let lastSig = '';
+    const pollBoard = () => {
       if (!parseSleeperDraftId(location.href)) return;
-      sendMessage({ type: 'draftrr:picks-changed' });
+      const board = readDraftBoard();
+      const sig = boardSignature(board);
+      if (!board.count || sig === lastSig) return;
+      lastSig = sig;
+      sendMessage({
+        type: 'draftrr:picks-changed',
+        count: board.count,
+        lastName: board.lastName,
+        lastLabel: board.lastLabel,
+      });
     };
-    const schedulePickPing = () => {
-      window.clearTimeout(pickTimer);
-      pickTimer = window.setTimeout(pingPicks, 400);
-    };
-
-    const pickSig = () => {
-      const nums = [...(document.body?.innerText ?? '').matchAll(/\bPick(?:\s*#)?\s*(\d+)/gi)].map(
-        (m) => Number(m[1]),
-      );
-      return nums.length ? String(Math.max(...nums)) : '';
-    };
-
-    let observeTimer: number | undefined;
-    const observer = new MutationObserver(() => {
-      window.clearTimeout(observeTimer);
-      observeTimer = window.setTimeout(() => {
-        const sig = pickSig();
-        if (!sig || sig === lastPickSig) return;
-        lastPickSig = sig;
-        schedulePickPing();
-      }, 400);
-    });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
-
-    window.addEventListener('message', (event) => {
-      if (event.source !== window) return;
-      if ((event.data as { type?: string })?.type === 'draftrr:sleeper-network-picks') {
-        schedulePickPing();
-      }
-    });
 
     beat();
+    pollBoard();
     ctx.setInterval(beat, 3000);
+    ctx.setInterval(pollBoard, 1000);
     ctx.onInvalidated(() => {
       hideBadge();
-      observer.disconnect();
     });
   },
 });

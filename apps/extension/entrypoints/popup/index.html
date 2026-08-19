@@ -6,11 +6,11 @@
     <style>
       body {
         font:
-          14px/1.4 system-ui,
+          13px/1.4 system-ui,
           sans-serif;
         margin: 0;
         padding: 12px 14px;
-        width: 260px;
+        width: 300px;
         background: #111827;
         color: #e8eef7;
       }
@@ -20,6 +20,25 @@
       .muted {
         color: #9aa4b2;
         font-size: 12px;
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 11px;
+        color: #9aa4b2;
+      }
+      .row b {
+        color: #e8eef7;
+        font-weight: 600;
+        text-align: right;
+      }
+      h2 {
+        margin: 12px 0 4px;
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #6b7280;
       }
     </style>
   </head>
@@ -33,6 +52,10 @@
       <span id="status">Checking…</span>
     </p>
     <p><a id="open" href="http://localhost:3000/draft/" target="_blank">Open in draftrr</a></p>
+    <h2>Page</h2>
+    <div id="page"></div>
+    <h2>Heartbeats</h2>
+    <div id="beats"></div>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>
