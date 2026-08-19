@@ -11,11 +11,14 @@ import { useEffect, useRef, useState } from 'react';
 function availabilityKey(req: EngineRequest): string {
   return JSON.stringify({
     pickedPlayerIds: req.pickedPlayerIds,
+    teamPlayerIds: req.teamPlayerIds,
     rankingPlayerIds: req.rankingPlayerIds,
     mySlot: req.mySlot,
+    currentPickNo: req.currentPickNo,
     settings: req.settings,
     sims: req.sims,
     seed: req.seed,
+    temperature: req.temperature,
   });
 }
 

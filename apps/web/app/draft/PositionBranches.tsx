@@ -1,5 +1,6 @@
 import type { Player, PositionBranch, RosterSlots } from '@draftrr/core';
 import { CompactRoster } from './CompactRoster';
+import { PpgHistogram } from './PpgHistogram';
 import { cn } from '@/lib/cn';
 
 export function PositionBranches({
@@ -24,8 +25,14 @@ export function PositionBranches({
                 </span>
                 {pick ? <span className="text-white/70"> · {pick.name}</span> : null}
               </div>
-              <div className="font-mono text-sm text-field-400">
-                {branch.medianStarterPpg.toFixed(1)} PPG
+              <div className="flex min-w-[7rem] flex-col items-end gap-1">
+                <div className="text-right font-mono text-sm text-field-400">
+                  {branch.expectedPpg.toFixed(1)}
+                  <span className="ml-1 font-sans text-[10px] text-white/40">exp</span>
+                </div>
+                <div className="w-24">
+                  <PpgHistogram samples={branch.ppgSamples} compact />
+                </div>
               </div>
             </div>
             <CompactRoster

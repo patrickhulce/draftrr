@@ -25,7 +25,9 @@ export function useSleeperBridge(): SleeperLinkStatus & {
 
   useEffect(() => {
     const win = window as Window & { __draftrrExtension?: boolean };
-    if (win.__draftrrExtension) setExtensionInstalled(true);
+    if (win.__draftrrExtension || document.documentElement.dataset.draftrrExtension === '1') {
+      setExtensionInstalled(true);
+    }
     const onMessage = (event: MessageEvent) => {
       if (event.source !== window) return;
       const data = event.data as {
@@ -36,6 +38,7 @@ export function useSleeperBridge(): SleeperLinkStatus & {
       };
       if (data?.type !== 'draftrr:status' && data?.type !== 'draftrr:active-draft') return;
       setExtensionInstalled(true);
+      document.documentElement.dataset.draftrrStatusAt = String(Date.now());
       if ('draftId' in data) setDraftId(data.draftId ?? null);
       if ('draftName' in data) setDraftName(data.draftName ?? null);
       if (typeof data.sleeperLive === 'boolean') setSleeperLive(data.sleeperLive);
@@ -94,7 +97,14 @@ export function useSleeperPicks(draftId: string | null) {
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.source !== window) return;
-      if ((event.data as { type?: string })?.type === 'draftrr:refresh-picks') void refresh();
+      const data = event.data as { type?: string; draftId?: string; picks?: SleeperPick[] };
+      if (data?.type === 'draftrr:picks-payload' && Array.isArray(data.picks)) {
+        if (data.draftId && idRef.current && data.draftId !== idRef.current) return;
+        setPicks(data.picks);
+        setError(null);
+        return;
+      }
+      if (data?.type === 'draftrr:refresh-picks') void refresh();
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);

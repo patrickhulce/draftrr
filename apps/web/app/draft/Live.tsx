@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  REC_PICKS,
   buildMatchIndex,
   optimalLineup,
   picksForSlot,
@@ -22,6 +23,7 @@ import { useSleeperBridge, useSleeperPicks } from '@/lib/sleeper';
 import { CompactRoster } from './CompactRoster';
 import { PositionBranches } from './PositionBranches';
 import { ProjectedPicks } from './ProjectedPicks';
+import { SimSummary } from './SimSummary';
 
 export function LiveDraft({ draftId }: { draftId: string }) {
   useEffect(() => {
@@ -38,7 +40,7 @@ export function LiveDraft({ draftId }: { draftId: string }) {
   const players = allPlayers();
   const byId = playerMap();
   const sleeper = useSleeperBridge();
-  const sleeperId = draft?.sleeperDraftId ?? sleeper.draftId ?? null;
+  const sleeperId = sleeper.draftId ?? draft?.sleeperDraftId ?? null;
   const {
     picks: sleeperPicks,
     draft: sleeperDraft,
@@ -48,6 +50,11 @@ export function LiveDraft({ draftId }: { draftId: string }) {
   } = useSleeperPicks(draft?.status === 'live' ? sleeperId : null);
   const [pending, setPending] = useState<PendingMatch[]>([]);
   const [overrides, setOverrides] = useState<Record<number, string | null>>({});
+
+  useEffect(() => {
+    if (!draft || !sleeper.draftId || sleeper.draftId === draft.sleeperDraftId) return;
+    void db.drafts.update(draft.id, { sleeperDraftId: sleeper.draftId, updatedAt: Date.now() });
+  }, [draft, sleeper.draftId]);
 
   const index = useMemo(() => buildMatchIndex(players, aliases), [players, aliases]);
 
@@ -114,6 +121,12 @@ export function LiveDraft({ draftId }: { draftId: string }) {
     .map((p) => byId.get(p.playerId!))
     .filter((p): p is NonNullable<typeof p> => Boolean(p));
 
+  const teamPlayerIds: Record<number, string[]> = {};
+  for (const pick of reconciled) {
+    if (!pick.playerId) continue;
+    (teamPlayerIds[pick.slot] ??= []).push(pick.playerId);
+  }
+
   const engineReq: EngineRequest | null = draft
     ? {
         players,
@@ -122,9 +135,12 @@ export function LiveDraft({ draftId }: { draftId: string }) {
         pickedPlayerIds: pickedIds,
         myPlayerIds: mine.map((p) => p.id),
         rankingPlayerIds: rankingIds,
-        sims: 100,
+        teamPlayerIds,
+        currentPickNo: reconciled.length + 1,
+        sims: 500,
         seed: 17,
-        temperature: 4,
+        // Softmax temperature in starter-PPG units (higher = more exploration).
+        temperature: 1,
       }
     : null;
   const { result, running } = useEngine(engineReq);
@@ -134,7 +150,8 @@ export function LiveDraft({ draftId }: { draftId: string }) {
     .map((id) => byId.get(id))
     .filter((p): p is NonNullable<typeof p> => Boolean(p));
 
-  const currentPickNo = pickedIds.length + 1;
+  const currentPickNo = reconciled.length + 1;
+  const remainingGridCols = Math.max(0, REC_PICKS - (result?.lockedPickCount ?? 0));
   const myPickNos = draft
     ? picksForSlot(
         currentPickNo - 1,
@@ -142,7 +159,7 @@ export function LiveDraft({ draftId }: { draftId: string }) {
         draft.settings.teams,
         draft.settings.rounds,
         draft.settings.draftType,
-      )
+      ).slice(0, remainingGridCols)
     : [];
   const nextMyPickNo = myPickNos[0] ?? null;
   const projectedAtNext = worstCaseProjectedAtNext(available, currentPickNo, nextMyPickNo);
@@ -151,6 +168,21 @@ export function LiveDraft({ draftId }: { draftId: string }) {
   );
 
   const currentLineup = draft ? optimalLineup(mine, draft.settings.slots) : null;
+
+  useEffect(() => {
+    const el = document.documentElement;
+    el.dataset.draftrrPicks = String(reconciled.length);
+    el.dataset.draftrrSleeperStatus = sleeperDraft?.status ?? '';
+    el.dataset.draftrrSleeperId = sleeperId ?? '';
+    el.dataset.draftrrExt = sleeper.extensionInstalled ? '1' : '0';
+    el.dataset.draftrrLive = sleeper.sleeperLive ? '1' : '0';
+  }, [
+    reconciled.length,
+    sleeperDraft?.status,
+    sleeperId,
+    sleeper.extensionInstalled,
+    sleeper.sleeperLive,
+  ]);
 
   const takeManual = async (playerId: string) => {
     if (!draft) return;
@@ -192,6 +224,12 @@ export function LiveDraft({ draftId }: { draftId: string }) {
               draftName={sleeper.draftName ?? sleeperDraft?.metadata?.name ?? null}
             />
           </div>
+          {sleeperDraft?.status === 'pre_draft' && sleeperPicks.length === 0 && (
+            <p className="mt-1 text-sm text-amber-300/80">
+              Sleeper still reports this draft as unstarted (0 picks). If the clock is already
+              running and you are not pick 1, the connected id is wrong or cached.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-2 text-sm text-white/60">
@@ -243,6 +281,8 @@ export function LiveDraft({ draftId }: { draftId: string }) {
           setPending((list) => list.filter((p) => p.pickNo !== pickNo));
         }}
       />
+
+      {result && <SimSummary positionGrid={result.positionGrid} byId={byId} />}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ProjectedPicks columns={projectedAtNext} byId={byId} />
