@@ -1,5 +1,5 @@
 import { PROJECTION_GAMES } from '../defaults.js';
-import type { LineupResult, Player, Position, RosterSlots } from '../types.js';
+import type { LineupResult, Player, Position, RosterSlotKind, RosterSlots } from '../types.js';
 
 export function ppg(player: Player): number {
   return player.projectedPoints / PROJECTION_GAMES;
@@ -111,10 +111,50 @@ export function optimalLineup(players: Player[], slots: RosterSlots): LineupResu
   const bench = players
     .filter((p) => !starterIds.has(p.id))
     .sort((a, b) => b.projectedPoints - a.projectedPoints);
-  const starterPoints = starters.reduce((s, p) => s + ppg(p), 0);
+  const starterPoints = starters
+    .filter((p) => p.position !== 'DST' && p.position !== 'K')
+    .reduce((s, p) => s + ppg(p), 0);
   const benchPoints = bench.reduce((s, p) => s + ppg(p), 0);
 
   return { starters, bench, starterPoints, benchPoints, slotsFilled };
+}
+
+export function rosterSize(slots: RosterSlots): number {
+  return slots.QB + slots.RB + slots.WR + slots.TE + slots.FLEX + slots.DST + slots.K + slots.BENCH;
+}
+
+export function canDraft(roster: Player[], slots: RosterSlots, candidate: Player): boolean {
+  if (roster.length >= rosterSize(slots)) return false;
+  const counts: Record<Position, number> = { QB: 0, RB: 0, WR: 0, TE: 0, DST: 0, K: 0 };
+  for (const p of roster) counts[p.position] += 1;
+  if (candidate.position === 'QB') return counts.QB < slots.QB;
+  if (candidate.position === 'TE') return counts.TE < slots.TE;
+  if (candidate.position === 'DST') return counts.DST < slots.DST;
+  if (candidate.position === 'K') return counts.K < slots.K;
+  return true;
+}
+
+const DEDICATED: Position[] = ['QB', 'RB', 'WR', 'TE', 'DST', 'K'];
+
+export function unfilledSlots(roster: Player[], slots: RosterSlots): RosterSlotKind[] {
+  const counts: Record<Position, number> = { QB: 0, RB: 0, WR: 0, TE: 0, DST: 0, K: 0 };
+  for (const p of roster) counts[p.position] += 1;
+
+  let dedicatedUsed = 0;
+  const remaining: RosterSlotKind[] = [];
+  for (const pos of DEDICATED) {
+    const used = Math.min(counts[pos], slots[pos]);
+    dedicatedUsed += used;
+    for (let i = used; i < slots[pos]; i++) remaining.push(pos);
+  }
+
+  let leftover = Math.max(0, roster.length - dedicatedUsed);
+  const flexUsed = Math.min(slots.FLEX, leftover);
+  leftover -= flexUsed;
+  for (let i = flexUsed; i < slots.FLEX; i++) remaining.push('FLEX');
+  const benchUsed = Math.min(slots.BENCH, leftover);
+  for (let i = benchUsed; i < slots.BENCH; i++) remaining.push('BENCH');
+  return remaining;
 }
 
 export function starterNeedScore(roster: Player[], slots: RosterSlots, candidate: Player): number {

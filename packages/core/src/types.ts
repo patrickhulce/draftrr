@@ -1,6 +1,7 @@
 export const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'DST', 'K'] as const;
 export type Position = (typeof POSITIONS)[number];
 export type FlexEligible = 'RB' | 'WR' | 'TE';
+export type RosterSlotKind = Position | 'FLEX' | 'BENCH';
 
 export interface Player {
   id: string;
@@ -137,9 +138,37 @@ export interface ProjectedAtNext {
 export interface PositionBranch {
   position: Position;
   pickPlayerId: string | null;
+  expectedPpg: number;
   medianStarterPpg: number;
   slotsFilled: LineupResult['slotsFilled'];
   benchIds: string[];
+  ppgSamples: number[];
+}
+
+export interface SimRecommendation {
+  positions: Position[];
+  expectedPpg: number;
+}
+
+export interface SelectionFlow {
+  positions: Position[];
+  count: number;
+  expectedPpg: number;
+}
+
+export interface GridPickPlayer {
+  playerId: string;
+  expectedPpg: number;
+  count: number;
+}
+
+export interface PositionRoundCell {
+  position: Position;
+  pickIndex: number;
+  expectedPpg: number | null;
+  count: number;
+  topPlayers: GridPickPlayer[];
+  locked?: boolean;
 }
 
 export interface SimulationResult {
@@ -148,6 +177,11 @@ export interface SimulationResult {
   positionBranches: PositionBranch[];
   nextPickNo: number;
   nextMyPickNo: number | null;
+  lockedPickCount: number;
+  recommendation: SimRecommendation;
+  ppgSamples: number[];
+  flows: SelectionFlow[];
+  positionGrid: PositionRoundCell[];
 }
 
 export interface EngineRequest {
@@ -157,8 +191,12 @@ export interface EngineRequest {
   pickedPlayerIds: string[];
   myPlayerIds: string[];
   rankingPlayerIds: string[];
+  teamPlayerIds?: Record<number, string[]>;
+  /** 1-indexed overall pick to simulate from. Defaults to pickedPlayerIds.length + 1. */
+  currentPickNo?: number;
   sims: number;
   seed: number;
+  /** Softmax temperature in starter-PPG units. Higher = more exploration. */
   temperature: number;
 }
 

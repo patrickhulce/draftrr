@@ -21,7 +21,8 @@ export const DEFAULT_LEAGUE: LeagueSettings = {
 };
 
 export const DEFAULT_SIMS = 800;
-export const DEFAULT_TEMPERATURE = 4;
+/** Softmax temperature in starter-PPG units. Higher = more exploration. */
+export const DEFAULT_TEMPERATURE = 1;
 export const PROJECTION_GAMES = 16;
 export const NAME_PREFIX_LEN = 3;
 export const MAX_EDIT_DISTANCE = 4;
