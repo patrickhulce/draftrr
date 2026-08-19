@@ -12,7 +12,12 @@ export async function sleeperGet<T>(
 ): Promise<FetchResult<T>> {
   // Do not send If-None-Match: Sleeper's CORS allow-list omits it, so a
   // second poll with an etag preflights and the browser reports "Failed to fetch".
-  const res = await fetchImpl(`${SLEEPER_BASE}${path}`);
+  // cache: 'no-store' plus a bust query keep the browser (and any CDN copy)
+  // from replaying the first pre_draft / empty-picks body.
+  const sep = path.includes('?') ? '&' : '?';
+  const res = await fetchImpl(`${SLEEPER_BASE}${path}${sep}_=${Date.now()}`, {
+    cache: 'no-store',
+  } as RequestInit);
   if (!res.ok) {
     throw new Error(`Sleeper ${path} failed: ${res.status}`);
   }

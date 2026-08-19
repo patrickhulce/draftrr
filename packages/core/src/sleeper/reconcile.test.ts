@@ -65,9 +65,11 @@ describe('parseDraftId', () => {
 
 describe('sleeperGet', () => {
   it('does not send If-None-Match (Sleeper CORS rejects it)', async () => {
-    const fetchImpl = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
       expect(headers.has('If-None-Match')).toBe(false);
+      expect(init?.cache).toBe('no-store');
+      expect(String(url)).toMatch(/[?&]_=\d+/);
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     }) as typeof fetch;
     await sleeperGet('/draft/1', fetchImpl);
