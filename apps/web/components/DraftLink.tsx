@@ -17,7 +17,7 @@ export function DraftLink({
         ? 'Draft page not open'
         : status?.error
           ? status.error
-          : 'No draft connected';
+          : 'Activate a draft tab';
 
   return (
     <span className="inline-flex items-center gap-1.5 text-sm">
