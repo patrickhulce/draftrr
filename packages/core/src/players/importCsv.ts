@@ -90,7 +90,7 @@ export function importPlayersCsv(text: string): ImportReport {
       projectedPoints,
       adp,
       adpStdev: rec.adpStdev ? (parseNumber(rec.adpStdev) ?? undefined) : undefined,
-      sleeperId: rec.sleeperId?.trim() || undefined,
+      externalId: rec.externalId?.trim() || undefined,
       tier: rec.tier ? (parseNumber(rec.tier) ?? undefined) : undefined,
       ballersRank: rec.ballersRank ? (parseNumber(rec.ballersRank) ?? undefined) : undefined,
       notes: rec.notes?.trim() || undefined,

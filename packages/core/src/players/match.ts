@@ -7,12 +7,12 @@ export interface MatchQuery {
   name?: string;
   position?: Position;
   team?: string;
-  sleeperId?: string;
+  externalId?: string;
   bye?: number;
 }
 
 export interface MatchIndex {
-  bySleeperId: Map<string, Player>;
+  byExternalId: Map<string, Player>;
   byNamePos: Map<string, Player[]>;
   byLoosePos: Map<string, Player[]>;
   byAlias: Map<string, Player>;
@@ -24,13 +24,13 @@ function namePosKey(key: string, position: Position): string {
 }
 
 export function buildMatchIndex(players: Player[], aliases: PlayerAlias[] = []): MatchIndex {
-  const bySleeperId = new Map<string, Player>();
+  const byExternalId = new Map<string, Player>();
   const byNamePos = new Map<string, Player[]>();
   const byLoosePos = new Map<string, Player[]>();
   const byId = new Map(players.map((p) => [p.id, p]));
 
   for (const p of players) {
-    if (p.sleeperId) bySleeperId.set(p.sleeperId, p);
+    if (p.externalId) byExternalId.set(p.externalId, p);
     const nk = namePosKey(p.nameKey, p.position);
     const lk = namePosKey(p.looseKey, p.position);
     byNamePos.set(nk, [...(byNamePos.get(nk) ?? []), p]);
@@ -43,7 +43,7 @@ export function buildMatchIndex(players: Player[], aliases: PlayerAlias[] = []):
     if (player) byAlias.set(a.sourceKey, player);
   }
 
-  return { bySleeperId, byNamePos, byLoosePos, byAlias, all: players };
+  return { byExternalId, byNamePos, byLoosePos, byAlias, all: players };
 }
 
 function pickUnique(list: Player[] | undefined): Player | undefined {
@@ -87,9 +87,9 @@ export function findFuzzyCandidates(query: MatchQuery, index: MatchIndex): Fuzzy
 }
 
 export function matchPlayer(query: MatchQuery, index: MatchIndex): MatchResult {
-  if (query.sleeperId) {
-    const hit = index.bySleeperId.get(query.sleeperId);
-    if (hit) return { kind: 'sleeperId', player: hit, candidates: [] };
+  if (query.externalId) {
+    const hit = index.byExternalId.get(query.externalId);
+    if (hit) return { kind: 'externalId', player: hit, candidates: [] };
   }
 
   if (query.position === 'DST' && query.team) {

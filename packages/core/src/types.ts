@@ -12,7 +12,7 @@ export interface Player {
   projectedPoints: number;
   adp: number;
   adpStdev?: number;
-  sleeperId?: string;
+  externalId?: string;
   tier?: number;
   ballersRank?: number;
   notes?: string;
@@ -61,7 +61,7 @@ export interface DraftPick {
   round: number;
   slot: number;
   playerId: string | null;
-  sleeperPlayerId?: string;
+  externalPlayerId?: string;
   rawName?: string;
   rawPosition?: string;
   rawTeam?: string;
@@ -75,7 +75,7 @@ export interface Draft {
   rankingSetId: string;
   settings: LeagueSettings;
   mySlot: number;
-  sleeperDraftId?: string;
+  draftKey?: string;
   picks: DraftPick[];
   status: DraftStatus;
   createdAt: number;
@@ -200,7 +200,7 @@ export interface EngineRequest {
   temperature: number;
 }
 
-export type MatchKind = 'sleeperId' | 'nameKey' | 'looseKey' | 'alias' | 'fuzzy' | 'unmatched';
+export type MatchKind = 'externalId' | 'nameKey' | 'looseKey' | 'alias' | 'fuzzy' | 'unmatched';
 
 export interface MatchResult {
   kind: MatchKind;

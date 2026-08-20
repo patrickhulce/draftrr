@@ -21,7 +21,7 @@ function p(
 }
 
 const players = [
-  p("Ja'Marr Chase", 'WR', 'CIN', { sleeperId: '7564', adp: 1 }),
+  p("Ja'Marr Chase", 'WR', 'CIN', { externalId: '7564', adp: 1 }),
   p('A.J. Brown', 'WR', 'PHI', { adp: 12 }),
   p('Amon-Ra St. Brown', 'WR', 'DET', { adp: 7 }),
   p('Kenneth Walker III', 'RB', 'SEA', { adp: 40 }),
@@ -29,7 +29,7 @@ const players = [
   p('Gabriel Davis', 'WR', 'JAX', { adp: 120 }),
   p('Justin Jefferson', 'WR', 'MIN', { adp: 2 }),
   p('Josh Allen', 'QB', 'BUF', { adp: 14 }),
-  p('San Francisco', 'DST', 'SF', { sleeperId: 'SF' }),
+  p('San Francisco', 'DST', 'SF', { externalId: 'SF' }),
   p('D.J. Moore', 'WR', 'CHI', { adp: 55 }),
 ];
 
@@ -38,9 +38,9 @@ describe('match cascade', () => {
     { sourceKey: 'hollywoodbrown', playerId: players[4]!.id, origin: 'seed' },
   ]);
 
-  it('matches sleeper id first', () => {
-    const r = matchPlayer({ sleeperId: '7564', name: 'Wrong Name', position: 'WR' }, index);
-    expect(r.kind).toBe('sleeperId');
+  it('matches external id first', () => {
+    const r = matchPlayer({ externalId: '7564', name: 'Wrong Name', position: 'WR' }, index);
+    expect(r.kind).toBe('externalId');
     expect(r.player?.name).toBe("Ja'Marr Chase");
   });
 
