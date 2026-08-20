@@ -17,7 +17,7 @@ make          # ci: build, lint, typecheck, test
 make serve    # Next.js dev server on :3000
 ```
 
-Load the unpacked extension from `apps/extension/dist/chrome-mv3` after `pnpm --filter @draftrr/extension build`.
+Load the unpacked extension from `apps/extension/dist/chrome-mv3` after `pnpm --filter @draftrr/extension build`. On a draft page, click **Activate** in the overlay to start pushing that tab (so multiple open drafts do not compete).
 
 ## Data
 
