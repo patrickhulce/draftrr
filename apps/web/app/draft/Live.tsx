@@ -138,6 +138,7 @@ export function LiveDraft({ draftId }: { draftId: string }) {
         seed: 17,
         // Softmax temperature in starter-PPG units (higher = more exploration).
         temperature: 1,
+        stochasticProjections: Boolean(draft.stochasticProjections),
       }
     : null;
   const { result, running } = useEngine(engineReq);
@@ -218,6 +219,23 @@ export function LiveDraft({ draftId }: { draftId: string }) {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-sm text-white/60">
+            Predictions
+            <select
+              data-testid="prediction-mode"
+              className="rounded-md border border-white/10 bg-ink-800 px-3 py-1.5 text-sm text-white"
+              value={draft.stochasticProjections ? 'stochastic' : 'fixed'}
+              onChange={(e) => {
+                void db.drafts.update(draft.id, {
+                  stochasticProjections: e.target.value === 'stochastic',
+                  updatedAt: Date.now(),
+                });
+              }}
+            >
+              <option value="fixed">Fixed</option>
+              <option value="stochastic">Stochastic</option>
+            </select>
+          </label>
           <label className="flex items-center gap-2 text-sm text-white/60">
             Rankings
             <select

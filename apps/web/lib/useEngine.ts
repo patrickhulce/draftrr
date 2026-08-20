@@ -19,6 +19,7 @@ function availabilityKey(req: EngineRequest): string {
     sims: req.sims,
     seed: req.seed,
     temperature: req.temperature,
+    stochasticProjections: req.stochasticProjections,
   });
 }
 
