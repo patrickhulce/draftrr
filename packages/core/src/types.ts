@@ -81,6 +81,8 @@ export interface Draft {
   createdAt: number;
   updatedAt: number;
   completedAt?: number;
+  /** When true, live sims sample points from each player's risk/upside distribution. */
+  stochasticProjections?: boolean;
 }
 
 export type AliasOrigin = 'user' | 'auto' | 'seed';
@@ -198,6 +200,8 @@ export interface EngineRequest {
   seed: number;
   /** Softmax temperature in starter-PPG units. Higher = more exploration. */
   temperature: number;
+  /** Sample season points from each player's risk/upside distribution. Default false (fixed projections). */
+  stochasticProjections?: boolean;
 }
 
 export type MatchKind = 'externalId' | 'nameKey' | 'looseKey' | 'alias' | 'fuzzy' | 'unmatched';

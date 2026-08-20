@@ -16,6 +16,7 @@ export * from './engine/rng.js';
 export * from './engine/snake.js';
 export * from './engine/lineup.js';
 export * from './engine/consensus.js';
+export * from './engine/projections.js';
 export * from './engine/simulate.js';
 export * from './draft/reconcile.js';
 export { defaultPlayers } from './generated/players.js';

@@ -15,6 +15,7 @@ import type {
 } from '../types.js';
 import { consensusStats } from './consensus.js';
 import { canDraft, optimalLineup, ppg, unfilledSlots } from './lineup.js';
+import { positionProjectionBounds, withSampledProjections } from './projections.js';
 import { createRng, normalSample, weightedPick } from './rng.js';
 import { nextPickForSlot, pickOrder, worstCaseReachable } from './snake.js';
 
@@ -500,6 +501,22 @@ function closestToMean<T extends { ppg: number }>(outcomes: T[]): T | undefined 
   return best;
 }
 
+function simPlayers(
+  req: EngineRequest,
+  picked: Set<string>,
+  bounds: ReturnType<typeof positionProjectionBounds>,
+  rng: () => number,
+): { pool: Player[]; initialRosters: Map<number, Player[]> } {
+  const players = req.stochasticProjections
+    ? withSampledProjections(req.players, bounds, rng)
+    : req.players;
+  const byId = new Map(players.map((p) => [p.id, p]));
+  return {
+    pool: players.filter((p) => !picked.has(p.id)),
+    initialRosters: initialTeamRosters(req, byId),
+  };
+}
+
 export function runSimulation(req: EngineRequest): SimulationResult {
   const sims = req.sims > 0 ? req.sims : DEFAULT_SIMS;
   const { settings, mySlot } = req;
@@ -544,9 +561,8 @@ export function runSimulation(req: EngineRequest): SimulationResult {
   const temperature =
     req.temperature && req.temperature > 0 ? req.temperature : DEFAULT_TEMPERATURE;
   const rng = createRng(req.seed);
+  const projectionBounds = req.stochasticProjections ? positionProjectionBounds(req.players) : null;
   const shared = {
-    pool,
-    initialRosters,
     order,
     currentPickNo,
     totalPicks,
@@ -565,10 +581,15 @@ export function runSimulation(req: EngineRequest): SimulationResult {
   }[] = [];
 
   for (let s = 0; s < sims; s++) {
-    const board = drawCpuBoard(pool, stats, rng);
+    const world = projectionBounds
+      ? simPlayers(req, picked, projectionBounds, rng)
+      : { pool, initialRosters };
+    const board = drawCpuBoard(world.pool, stats, rng);
     const countedRound = new Set<number>();
     const draft = runDraft({
       ...shared,
+      pool: world.pool,
+      initialRosters: world.initialRosters,
       board,
       onRemaining: (pickNo, remaining) => {
         const round = Math.floor((pickNo - 1) / settings.teams) + 1;
@@ -621,9 +642,14 @@ export function runSimulation(req: EngineRequest): SimulationResult {
       if (!pool.some((p) => p.position === position)) continue;
       const outcomes: ForcedOutcome[] = [];
       for (let s = 0; s < forcedSims; s++) {
-        const board = drawCpuBoard(pool, stats, rng);
+        const world = projectionBounds
+          ? simPlayers(req, picked, projectionBounds, rng)
+          : { pool, initialRosters };
+        const board = drawCpuBoard(world.pool, stats, rng);
         const draft = runDraft({
           ...shared,
+          pool: world.pool,
+          initialRosters: world.initialRosters,
           board,
           forcedPos: position,
           forcedPickNo: myNext,
