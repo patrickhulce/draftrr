@@ -13,6 +13,7 @@ const config: NextConfig = {
     webpackConfig.resolve.alias = {
       ...webpackConfig.resolve.alias,
       '@draftrr/core': path.resolve(root, '../../packages/core/dist/index.js'),
+      '@draftrr/wire': path.resolve(root, '../../packages/wire/dist/index.js'),
     };
     return webpackConfig;
   },

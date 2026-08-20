@@ -28,6 +28,12 @@ export class DraftrrDB extends Dexie {
       aliases: 'sourceKey, playerId',
       settings: 'key',
     });
+    this.version(2).stores({
+      rankingSets: 'id, updatedAt, parentId',
+      drafts: 'id, updatedAt, status, draftKey',
+      aliases: 'sourceKey, playerId',
+      settings: 'key',
+    });
   }
 }
 

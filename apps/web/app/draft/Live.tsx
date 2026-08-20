@@ -5,7 +5,7 @@ import {
   buildMatchIndex,
   optimalLineup,
   picksForSlot,
-  reconcilePicks,
+  reconcileDrafted,
   worstCaseHighlighted,
   worstCaseProjectedAtNext,
   type EngineRequest,
@@ -14,12 +14,12 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { FuzzyBanner, type PendingMatch } from '@/components/FuzzyBanner';
-import { SleeperLink } from '@/components/SleeperLink';
+import { DraftLink } from '@/components/DraftLink';
 import { cn } from '@/lib/cn';
 import { db, ensureSeeded } from '@/lib/db';
 import { useEngine } from '@/lib/useEngine';
 import { allPlayers, playerMap } from '@/lib/players';
-import { useSleeperBridge, useSleeperPicks } from '@/lib/sleeper';
+import { useDraftLink } from '@/lib/draftLink';
 import { CompactRoster } from './CompactRoster';
 import { PositionBranches } from './PositionBranches';
 import { ProjectedPicks } from './ProjectedPicks';
@@ -39,38 +39,35 @@ export function LiveDraft({ draftId }: { draftId: string }) {
   const aliases = useLiveQuery(() => db.aliases.toArray(), []) ?? [];
   const players = allPlayers();
   const byId = playerMap();
-  const sleeper = useSleeperBridge();
-  const sleeperId = sleeper.draftId ?? draft?.sleeperDraftId ?? null;
-  const {
-    picks: sleeperPicks,
-    draft: sleeperDraft,
-    error,
-    refresh,
-    refreshing,
-  } = useSleeperPicks(draft?.status === 'live' ? sleeperId : null);
+  const { installed, status, snapshot, refresh } = useDraftLink();
+  const liveSnapshot =
+    draft?.status === 'live' && snapshot && snapshot.draftKey === draft.draftKey ? snapshot : null;
+  const drafted = liveSnapshot?.drafted;
+  const error = status?.error ?? null;
+  const refreshing = status?.state === 'connecting';
   const [pending, setPending] = useState<PendingMatch[]>([]);
   const [overrides, setOverrides] = useState<Record<number, string | null>>({});
 
   useEffect(() => {
-    if (!draft || !sleeper.draftId || sleeper.draftId === draft.sleeperDraftId) return;
-    void db.drafts.update(draft.id, { sleeperDraftId: sleeper.draftId, updatedAt: Date.now() });
-  }, [draft, sleeper.draftId]);
+    if (!draft || !snapshot?.draftKey || snapshot.draftKey === draft.draftKey) return;
+    void db.drafts.update(draft.id, { draftKey: snapshot.draftKey, updatedAt: Date.now() });
+  }, [draft, snapshot]);
 
   const index = useMemo(() => buildMatchIndex(players, aliases), [players, aliases]);
 
   const reconciled = useMemo(() => {
-    if (!sleeperPicks.length) return draft?.picks ?? [];
-    const rec = reconcilePicks(sleeperPicks, index);
+    if (!drafted?.length) return draft?.picks ?? [];
+    const rec = reconcileDrafted(drafted, index);
     return rec.map((r) => {
       const override = overrides[r.pick.pickNo];
       if (override !== undefined) return { ...r.pick, playerId: override };
       return r.pick;
     });
-  }, [sleeperPicks, index, draft?.picks, overrides]);
+  }, [drafted, index, draft?.picks, overrides]);
 
   const unmatched = useMemo(() => {
-    if (!sleeperPicks.length) return [];
-    const rec = reconcilePicks(sleeperPicks, index);
+    if (!drafted?.length) return [];
+    const rec = reconcileDrafted(drafted, index);
     return rec
       .filter((r) => {
         if (overrides[r.pick.pickNo] !== undefined) return false;
@@ -83,12 +80,12 @@ export function LiveDraft({ draftId }: { draftId: string }) {
         match: r.match,
         pickNo: r.pick.pickNo,
       }));
-  }, [sleeperPicks, index, overrides]);
+  }, [drafted, index, overrides]);
 
   const toasted = useRef<Set<number>>(new Set());
   useEffect(() => {
-    if (!draft || !sleeperPicks.length) return;
-    const rec = reconcilePicks(sleeperPicks, index);
+    if (!draft || !drafted?.length) return;
+    const rec = reconcileDrafted(drafted, index);
     for (const r of rec) {
       const top = r.match.candidates[0];
       if (
@@ -109,7 +106,7 @@ export function LiveDraft({ draftId }: { draftId: string }) {
     }
     if (JSON.stringify(draft.picks) === JSON.stringify(reconciled)) return;
     void db.drafts.update(draft.id, { picks: reconciled, updatedAt: Date.now() });
-  }, [draft, sleeperPicks, index, reconciled]);
+  }, [draft, drafted, index, reconciled]);
 
   const pickedIds = reconciled.map((p) => p.playerId).filter((id): id is string => Boolean(id));
   const rankingIds =
@@ -136,7 +133,7 @@ export function LiveDraft({ draftId }: { draftId: string }) {
         myPlayerIds: mine.map((p) => p.id),
         rankingPlayerIds: rankingIds,
         teamPlayerIds,
-        currentPickNo: reconciled.length + 1,
+        currentPickNo: liveSnapshot?.currentPickNo ?? reconciled.length + 1,
         sims: 500,
         seed: 17,
         // Softmax temperature in starter-PPG units (higher = more exploration).
@@ -150,7 +147,7 @@ export function LiveDraft({ draftId }: { draftId: string }) {
     .map((id) => byId.get(id))
     .filter((p): p is NonNullable<typeof p> => Boolean(p));
 
-  const currentPickNo = reconciled.length + 1;
+  const currentPickNo = liveSnapshot?.currentPickNo ?? reconciled.length + 1;
   const remainingGridCols = Math.max(0, REC_PICKS - (result?.lockedPickCount ?? 0));
   const myPickNos = draft
     ? picksForSlot(
@@ -172,17 +169,11 @@ export function LiveDraft({ draftId }: { draftId: string }) {
   useEffect(() => {
     const el = document.documentElement;
     el.dataset.draftrrPicks = String(reconciled.length);
-    el.dataset.draftrrSleeperStatus = sleeperDraft?.status ?? '';
-    el.dataset.draftrrSleeperId = sleeperId ?? '';
-    el.dataset.draftrrExt = sleeper.extensionInstalled ? '1' : '0';
-    el.dataset.draftrrLive = sleeper.sleeperLive ? '1' : '0';
-  }, [
-    reconciled.length,
-    sleeperDraft?.status,
-    sleeperId,
-    sleeper.extensionInstalled,
-    sleeper.sleeperLive,
-  ]);
+    el.dataset.draftrrDraftKey = liveSnapshot?.draftKey ?? draft?.draftKey ?? '';
+    el.dataset.draftrrPhase = liveSnapshot?.phase ?? '';
+    el.dataset.draftrrExt = installed ? '1' : '0';
+    el.dataset.draftrrLinked = status?.state === 'linked' ? '1' : '0';
+  }, [draft?.draftKey, installed, liveSnapshot, reconciled.length, status?.state]);
 
   const takeManual = async (playerId: string) => {
     if (!draft) return;
@@ -211,23 +202,18 @@ export function LiveDraft({ draftId }: { draftId: string }) {
         <div>
           <h1 className="text-2xl font-semibold">{draft.name}</h1>
           <p className="text-sm text-white/50">
-            Pick {reconciled.length + 1} · you are slot {draft.mySlot}
-            {sleeperDraft ? ` · ${sleeperDraft.status}` : ''}
+            Pick {currentPickNo} · you are slot {draft.mySlot}
+            {liveSnapshot ? ` · ${liveSnapshot.phase}` : ''}
             {running ? ' · simulating…' : ''}
             {error ? ` · ${error}` : ''}
           </p>
           <div className="mt-1">
-            <SleeperLink
-              extensionInstalled={sleeper.extensionInstalled}
-              sleeperLive={sleeper.sleeperLive}
-              draftId={sleeper.draftId ?? draft.sleeperDraftId ?? null}
-              draftName={sleeper.draftName ?? sleeperDraft?.metadata?.name ?? null}
-            />
+            <DraftLink installed={installed} status={status} />
           </div>
-          {sleeperDraft?.status === 'pre_draft' && sleeperPicks.length === 0 && (
+          {liveSnapshot?.phase === 'pre' && liveSnapshot.drafted.length === 0 && (
             <p className="mt-1 text-sm text-amber-300/80">
-              Sleeper still reports this draft as unstarted (0 picks). If the clock is already
-              running and you are not pick 1, the connected id is wrong or cached.
+              This draft still looks unstarted (0 picks). If the clock is already running and you
+              are not pick 1, the connected draft is wrong or cached.
             </p>
           )}
         </div>
@@ -259,8 +245,8 @@ export function LiveDraft({ draftId }: { draftId: string }) {
           <button
             type="button"
             className="rounded-md border border-white/15 px-3 py-1.5 text-sm disabled:opacity-50"
-            disabled={refreshing || !sleeperId}
-            onClick={() => void refresh()}
+            disabled={refreshing || !draft.draftKey}
+            onClick={() => refresh()}
           >
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>

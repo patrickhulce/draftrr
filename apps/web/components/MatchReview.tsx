@@ -20,7 +20,7 @@ function resolvedCatalogId(incoming: Player, index: MatchIndex): string | undefi
       name: incoming.name,
       position: incoming.position,
       team: incoming.team,
-      sleeperId: incoming.sleeperId,
+      externalId: incoming.externalId,
       bye: incoming.bye,
     },
     index,

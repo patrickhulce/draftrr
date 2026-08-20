@@ -17,8 +17,8 @@ export default function HomePage() {
       <div>
         <h1 className="text-3xl font-semibold">Draft like you already know the board.</h1>
         <p className="mt-2 max-w-2xl text-white/60">
-          Rank your board, connect a live Sleeper draft, and get positional advice from a
-          local-first assistant.
+          Rank your board, connect a live draft, and get positional advice from a local-first
+          assistant.
         </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">

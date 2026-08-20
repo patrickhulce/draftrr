@@ -3,10 +3,7 @@
 import {
   DEFAULT_LEAGUE,
   DEFAULT_SLOTS,
-  fetchDraft,
-  parseDraftId,
   roundsFromSlots,
-  settingsFromSleeperDraft,
   type Draft,
   type DraftType,
   type LeagueSettings,
@@ -16,10 +13,10 @@ import {
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { DraftLink } from '@/components/DraftLink';
 import { db, ensureSeeded } from '@/lib/db';
-import { SleeperLink } from '@/components/SleeperLink';
+import { useDraftLink } from '@/lib/draftLink';
 import { uid } from '@/lib/ids';
-import { useSleeperBridge } from '@/lib/sleeper';
 import { RosterSlotsField } from './RosterSlotsField';
 
 type ImportStatus =
@@ -33,69 +30,67 @@ export function DraftSetup() {
   }, []);
   const params = useSearchParams();
   const drafts = useLiveQuery(() => db.drafts.orderBy('updatedAt').reverse().toArray(), []) ?? [];
-  const sleeper = useSleeperBridge();
-  const { draftId: liveId } = sleeper;
+  const { installed, status, snapshot, connect } = useDraftLink();
   const [mySlot, setMySlot] = useState(1);
   const [teams, setTeams] = useState(DEFAULT_LEAGUE.teams);
   const [draftType, setDraftType] = useState<DraftType>(DEFAULT_LEAGUE.draftType);
   const [scoring, setScoring] = useState<ScoringFormat>(DEFAULT_LEAGUE.scoring);
   const [slots, setSlots] = useState<RosterSlots>({ ...DEFAULT_SLOTS });
-  const [sleeperInput, setSleeperInput] = useState(params.get('sleeper') ?? '');
+  const [draftInput, setDraftInput] = useState(params.get('connect') ?? '');
   const [imported, setImported] = useState(false);
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
 
-  const sleeperDraftId = parseDraftId(sleeperInput) || liveId || null;
-
   useEffect(() => {
-    if (!sleeperDraftId) {
-      setImportStatus(null);
-      setImported(false);
+    const value = draftInput.trim();
+    if (!value) return;
+    if (!installed) {
+      setImportStatus({
+        kind: 'error',
+        message: 'Install the draftrr extension to connect a live draft.',
+      });
       return;
     }
-
-    let cancelled = false;
     setImportStatus({ kind: 'loading' });
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const res = await fetchDraft(sleeperDraftId);
-          if (cancelled) return;
-          if (!res.data) {
-            setImportStatus({ kind: 'error', message: 'Sleeper returned an empty draft.' });
-            return;
-          }
-          const { settings, mySlot: importedSlot, warnings } = settingsFromSleeperDraft(res.data);
-          setTeams(settings.teams);
-          setDraftType(settings.draftType);
-          setScoring(settings.scoring);
-          setSlots(settings.slots);
-          setMySlot((slot) => {
-            const next = importedSlot ?? slot;
-            return Math.min(Math.max(1, next), settings.teams);
-          });
-          setImported(true);
-          const scoringLabel = settings.scoring.replace('-', ' ');
-          const slotBit = importedSlot ? `, slot ${importedSlot}` : '';
-          setImportStatus({
-            kind: 'ok',
-            message: `${settings.teams}-team ${settings.draftType}, ${scoringLabel}, ${settings.rounds} rounds${slotBit} loaded from Sleeper`,
-            warnings,
-          });
-        } catch (err) {
-          if (cancelled) return;
-          setImportStatus({
-            kind: 'error',
-            message: err instanceof Error ? err.message : 'Failed to load Sleeper draft',
-          });
-        }
-      })();
-    }, 400);
+    const timer = window.setTimeout(() => connect(value), 400);
+    return () => window.clearTimeout(timer);
+  }, [connect, draftInput, installed]);
 
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [sleeperDraftId]);
+  useEffect(() => {
+    if (draftInput.trim()) return;
+    if (!snapshot) {
+      setImportStatus(null);
+      setImported(false);
+    }
+  }, [draftInput, snapshot]);
+
+  useEffect(() => {
+    if (!snapshot) return;
+    setTeams(snapshot.teams);
+    setDraftType(snapshot.draftType);
+    setScoring(snapshot.scoring);
+    setSlots(snapshot.slots);
+    setMySlot((slot) => {
+      const next = snapshot.mySlot ?? slot;
+      return Math.min(Math.max(1, next), snapshot.teams);
+    });
+    setImported(true);
+    const scoringLabel = snapshot.scoring.replace('-', ' ');
+    const slotBit = snapshot.mySlot ? `, slot ${snapshot.mySlot}` : '';
+    setImportStatus({
+      kind: 'ok',
+      message: `${snapshot.teams}-team ${snapshot.draftType}, ${scoringLabel}, ${snapshot.rounds} rounds${slotBit}`,
+      warnings: snapshot.warnings,
+    });
+  }, [snapshot]);
+
+  useEffect(() => {
+    if (status?.state === 'connecting' && !snapshot) {
+      setImportStatus({ kind: 'loading' });
+    }
+    if (status?.state === 'error' && status.error) {
+      setImportStatus({ kind: 'error', message: status.error });
+    }
+  }, [snapshot, status]);
 
   const start = async () => {
     const settings: LeagueSettings = {
@@ -108,13 +103,13 @@ export function DraftSetup() {
     };
     const draft: Draft = {
       id: uid('draft'),
-      name: sleeperDraftId
-        ? `Sleeper ${sleeperDraftId.slice(-6)}`
+      name: snapshot
+        ? (snapshot.draftName ?? `Draft ${snapshot.draftKey.slice(-6)}`)
         : `Draft ${new Date().toLocaleString()}`,
       rankingSetId: 'default',
       settings,
       mySlot,
-      sleeperDraftId: sleeperDraftId ?? undefined,
+      draftKey: snapshot?.draftKey,
       picks: [],
       status: 'live',
       createdAt: Date.now(),
@@ -129,28 +124,23 @@ export function DraftSetup() {
       <div>
         <h1 className="text-2xl font-semibold">Start a draft</h1>
         <div className="mt-1">
-          <SleeperLink
-            extensionInstalled={sleeper.extensionInstalled}
-            sleeperLive={sleeper.sleeperLive}
-            draftId={sleeper.draftId}
-            draftName={sleeper.draftName}
-          />
+          <DraftLink installed={installed} status={status} />
         </div>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="space-y-1 text-sm sm:col-span-2">
-          Sleeper draft URL or ID
+          Draft URL or ID
           <input
             className="w-full rounded-md border border-white/10 bg-ink-800 px-3 py-2"
-            placeholder={liveId ?? 'https://sleeper.com/beta/draft/nfl/…'}
-            value={sleeperInput}
-            onChange={(e) => setSleeperInput(e.target.value)}
+            placeholder="Paste your draft URL"
+            value={draftInput}
+            onChange={(e) => setDraftInput(e.target.value)}
           />
         </label>
         {importStatus && (
           <div className="sm:col-span-2 text-sm">
             {importStatus.kind === 'loading' && (
-              <p className="text-white/50">Loading league settings from Sleeper…</p>
+              <p className="text-white/50">Loading league settings…</p>
             )}
             {importStatus.kind === 'ok' && (
               <div className="space-y-1">

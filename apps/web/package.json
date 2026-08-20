@@ -16,6 +16,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@draftrr/core": "workspace:*",
+    "@draftrr/wire": "workspace:*",
     "@tanstack/react-virtual": "^3.13.5",
     "clsx": "^2.1.1",
     "dexie": "^4.0.11",
