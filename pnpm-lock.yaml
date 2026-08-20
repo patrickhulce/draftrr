@@ -25,6 +25,10 @@ importers:
         version: 8.67.0(eslint@9.39.5(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
 
   apps/extension:
+    dependencies:
+      '@draftrr/wire':
+        specifier: workspace:*
+        version: link:../../packages/wire
     devDependencies:
       '@types/chrome':
         specifier: ^0.0.313
@@ -32,6 +36,9 @@ importers:
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
+      vitest:
+        specifier: ^3.0.9
+        version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.33.0)(supports-color@7.2.0)(tsx@4.23.12)
       wxt:
         specifier: ^0.20.0
         version: 0.20.27(@types/node@22.20.1)(eslint@9.39.5(jiti@2.7.0)(supports-color@7.2.0))(jiti@2.7.0)(rolldown@1.2.4)(rollup@4.62.4)(supports-color@7.2.0)(tsx@4.23.12)
@@ -50,6 +57,9 @@ importers:
       '@draftrr/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@draftrr/wire':
+        specifier: workspace:*
+        version: link:../../packages/wire
       '@tanstack/react-virtual':
         specifier: ^3.13.5
         version: 3.14.9(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -108,6 +118,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@draftrr/wire':
+        specifier: workspace:*
+        version: link:../wire
       zod:
         specifier: ^3.24.2
         version: 3.25.76
@@ -124,6 +137,12 @@ importers:
       vitest:
         specifier: ^3.0.9
         version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.33.0)(supports-color@7.2.0)(tsx@4.23.12)
+
+  packages/wire:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
 
 packages:
 
