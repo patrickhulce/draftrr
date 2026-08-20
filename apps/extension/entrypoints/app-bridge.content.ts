@@ -1,4 +1,12 @@
+import { WIRE_MSG, isDraftSnapshot, isLinkStatus } from '@draftrr/wire';
 import { onRuntimeMessage, sendMessage } from '~/lib/runtime';
+
+const PAGE_TO_BG = new Set<string>([
+  WIRE_MSG.hello,
+  WIRE_MSG.connect,
+  WIRE_MSG.refresh,
+  WIRE_MSG.disconnect,
+]);
 
 export default defineContentScript({
   matches: [
@@ -23,10 +31,10 @@ export default defineContentScript({
       return {
         href: location.href,
         picks: el.dataset.draftrrPicks ?? '',
-        sleeperStatus: el.dataset.draftrrSleeperStatus ?? '',
-        sleeperId: el.dataset.draftrrSleeperId ?? '',
+        draftKey: el.dataset.draftrrDraftKey ?? '',
+        phase: el.dataset.draftrrPhase ?? '',
         pageExt: el.dataset.draftrrExt ?? '',
-        pageLive: el.dataset.draftrrLive ?? '',
+        pageLinked: el.dataset.draftrrLinked ?? '',
         pageStatusAt: el.dataset.draftrrStatusAt ?? '',
       };
     };
@@ -34,29 +42,20 @@ export default defineContentScript({
     const beat = () => {
       sendMessage({ type: 'draftrr:app-heartbeat', page: pageState() }, (res) => {
         if (!res || typeof res !== 'object') {
-          post({ type: 'draftrr:status' });
+          post({ type: WIRE_MSG.link });
           return;
         }
-        const data = res as Record<string, unknown>;
-        const pendingPicks = data.pendingPicks;
-        const status = { ...data };
-        delete status.pendingPicks;
-        post({ type: 'draftrr:status', ...status });
-        if (pendingPicks && typeof pendingPicks === 'object') {
-          post(pendingPicks as Record<string, unknown>);
-        }
+        const data = res as { link?: unknown; snapshot?: unknown };
+        if (isLinkStatus(data.link)) post({ type: WIRE_MSG.link, status: data.link });
+        if (isDraftSnapshot(data.snapshot))
+          post({ type: WIRE_MSG.snapshot, snapshot: data.snapshot });
       });
     };
 
     onRuntimeMessage((message) => {
-      if (message.type === 'draftrr:status') post({ type: 'draftrr:status', ...message });
-      if (message.type === 'draftrr:refresh-picks') post({ type: 'draftrr:refresh-picks' });
-      if (message.type === 'draftrr:picks-payload') {
-        post({
-          type: 'draftrr:picks-payload',
-          draftId: message.draftId,
-          picks: message.picks,
-        });
+      if (message.type === WIRE_MSG.link) post({ type: WIRE_MSG.link, status: message.status });
+      if (message.type === WIRE_MSG.snapshot) {
+        post({ type: WIRE_MSG.snapshot, snapshot: message.snapshot });
       }
     });
 
@@ -64,10 +63,16 @@ export default defineContentScript({
       if (event.source !== window) return;
       if (event.origin !== window.location.origin) return;
       const data = event.data as { type?: string };
-      if (data?.type === 'draftrr:hello') beat();
+      if (!data?.type || !PAGE_TO_BG.has(data.type)) return;
+      if (data.type === WIRE_MSG.hello) {
+        beat();
+        return;
+      }
+      sendMessage(data, () => {
+        beat();
+      });
     });
 
-    post({ type: 'draftrr:status' });
     beat();
     ctx.setInterval(beat, 3000);
   },

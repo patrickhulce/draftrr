@@ -1,11 +1,5 @@
-import { boardSignature, readDraftBoard } from '~/lib/draftBoard';
-import { parseSleeperDraftId } from '~/lib/draftId';
+import { allHostMatches, providerForUrl } from '~/lib/providers';
 import { onRuntimeMessage, sendMessage } from '~/lib/runtime';
-
-function draftNameFromPage(): string | null {
-  const title = document.title.replace(/\s*[|\-–•]\s*Sleeper.*$/i, '').trim();
-  return title.length > 0 && title.toLowerCase() !== 'sleeper' ? title : null;
-}
 
 function ensureBadge() {
   let el = document.getElementById('draftrr-link');
@@ -45,31 +39,27 @@ function hideBadge() {
 }
 
 export default defineContentScript({
-  matches: [
-    'https://sleeper.com/*',
-    'https://*.sleeper.com/*',
-    'https://sleeper.app/*',
-    'https://*.sleeper.app/*',
-  ],
+  matches: allHostMatches(),
   runAt: 'document_idle',
   main(ctx) {
     const beat = () => {
-      const draftId = parseSleeperDraftId(location.href);
-      if (!draftId) {
+      const provider = providerForUrl(location.href);
+      const draftId = provider?.parseDraftId(location.href) ?? null;
+      if (!provider || !draftId) {
         hideBadge();
         return;
       }
-      const board = readDraftBoard();
       sendMessage(
         {
-          type: 'draftrr:sleeper-heartbeat',
+          type: 'draftrr:provider-heartbeat',
+          provider: provider.id,
           draftId,
-          draftName: draftNameFromPage(),
-          board,
+          draftName: provider.draftNameFromTitle(document.title),
+          board: provider.readBoard?.(),
         },
         (res) => {
-          const live = Boolean((res as { appLive?: boolean } | undefined)?.appLive);
-          setBadge(live);
+          const seen = (res as { appSeenAt?: number } | undefined)?.appSeenAt ?? 0;
+          setBadge(Boolean(seen) && Date.now() - seen < 8000);
         },
       );
     };
@@ -84,27 +74,31 @@ export default defineContentScript({
     history.replaceState = wrap(history.replaceState.bind(history));
     window.addEventListener('popstate', beat);
     window.addEventListener('pagehide', () => {
-      sendMessage({ type: 'draftrr:sleeper-disconnect' });
+      sendMessage({ type: 'draftrr:provider-disconnect' });
     });
 
     onRuntimeMessage((message) => {
-      if (message.type === 'draftrr:status' && parseSleeperDraftId(location.href)) {
+      if (
+        message.type === 'draftrr:status' &&
+        providerForUrl(location.href)?.parseDraftId(location.href)
+      ) {
         setBadge(Boolean(message.appLive));
       }
     });
 
     let lastSig = '';
     const pollBoard = () => {
-      if (!parseSleeperDraftId(location.href)) return;
-      const board = readDraftBoard();
-      const sig = boardSignature(board);
-      if (!board.count || sig === lastSig) return;
+      const provider = providerForUrl(location.href);
+      if (!provider?.parseDraftId(location.href)) return;
+      const board = provider.readBoard?.();
+      const sig = provider.boardSignature();
+      if (!sig || sig === lastSig) return;
       lastSig = sig;
       sendMessage({
-        type: 'draftrr:picks-changed',
-        count: board.count,
-        lastName: board.lastName,
-        lastLabel: board.lastLabel,
+        type: 'draftrr:board-changed',
+        count: board?.count,
+        lastName: board?.lastName,
+        lastLabel: board?.lastLabel,
       });
     };
 

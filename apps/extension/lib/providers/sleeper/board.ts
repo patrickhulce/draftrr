@@ -19,6 +19,6 @@ export function readDraftBoard(root: ParentNode = document): DraftBoardSnapshot 
   return { count: cells.length, lastName, lastLabel };
 }
 
-export function boardSignature(board: DraftBoardSnapshot): string {
+export function boardSignatureOf(board: DraftBoardSnapshot): string {
   return `${board.count}|${board.lastName}|${board.lastLabel}`;
 }

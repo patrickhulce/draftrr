@@ -6,7 +6,7 @@ export default defineConfig({
   outDir: 'dist',
   manifest: {
     name: 'draftrr',
-    description: 'Mirror a live Sleeper draft into draftrr',
+    description: 'Mirror a live draft into draftrr',
     version: '0.0.1',
     permissions: ['storage', 'tabs'],
     host_permissions: [

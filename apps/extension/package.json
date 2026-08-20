@@ -5,15 +5,20 @@
   "type": "module",
   "scripts": {
     "build": "wxt build",
-    "lint": "eslint entrypoints && prettier --check entrypoints",
-    "lint:fix": "eslint --fix entrypoints && prettier --write entrypoints",
+    "lint": "eslint entrypoints lib && prettier --check entrypoints lib",
+    "lint:fix": "eslint --fix entrypoints lib && prettier --write entrypoints lib",
     "typecheck": "wxt prepare && tsc --noEmit",
-    "test": "echo 'no extension unit tests'",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "serve": "wxt"
+  },
+  "dependencies": {
+    "@draftrr/wire": "workspace:*"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.313",
     "typescript": "^5.8.2",
+    "vitest": "^3.0.9",
     "wxt": "^0.20.0"
   }
 }

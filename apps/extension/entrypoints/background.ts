@@ -1,85 +1,107 @@
-import { parseSleeperDraftId, SLEEPER_HOSTS } from '~/lib/draftId';
 import {
-  PICK_DEBOUNCE_MS,
-  mergePending,
-  pickEventSignature,
-  toPickMessage,
-  type PendingPickEvent,
-} from '~/lib/pickDebounce';
+  WIRE_MSG,
+  WIRE_VERSION,
+  type DraftSnapshot,
+  type LinkState,
+  type LinkStatus,
+} from '@draftrr/wire';
+import { PICK_DEBOUNCE_MS } from '~/lib/pickDebounce';
+import {
+  allHostMatches,
+  makeDraftKey,
+  providerById,
+  providerForUrl,
+  resolveConnect,
+} from '~/lib/providers';
 
 const STALE_MS = 8000;
-const DRAFT_KEY = 'activeDraftId';
-const NAME_KEY = 'activeDraftName';
+const LINK_KEY = 'activeLink';
 
 type PageState = {
   href?: string;
   picks?: string;
-  sleeperStatus?: string;
-  sleeperId?: string;
+  draftKey?: string;
+  phase?: string;
   pageExt?: string;
-  pageLive?: string;
+  pageLinked?: string;
   pageStatusAt?: string;
 };
 
-type Status = {
-  draftId: string | null;
-  draftName: string | null;
-  sleeperLive: boolean;
-  appLive: boolean;
-  sleeperSeenAt: number;
+type Link = {
+  providerId: string;
+  draftId: string;
+  draftKey: string;
+};
+
+type DebugStatus = {
+  link: LinkStatus;
+  snapshot: DraftSnapshot | null;
+  providerId: string | null;
+  providerSeenAt: number;
   appSeenAt: number;
-  lastPickAt: number;
-  lastPickKind: string | null;
-  lastFlushAt: number;
-  lastFlushResult: string | null;
-  lastFlushKind: string | null;
-  lastPayloadCount: number | null;
+  lastFetchAt: number;
+  lastFetchKind: string | null;
+  lastFetchResult: string | null;
   lastBoardName: string | null;
+  lastBoardCount: number | null;
   page: PageState | null;
 };
 
 export default defineBackground(() => {
-  let draftId: string | null = null;
-  let draftName: string | null = null;
-  let sleeperSeenAt = 0;
+  let link: Link | null = null;
+  let snapshot: DraftSnapshot | null = null;
+  let tabDraftName: string | null = null;
+  let providerSeenAt = 0;
   let appSeenAt = 0;
-  let lastPickAt = 0;
-  let lastPickKind: string | null = null;
-  let lastFlushAt = 0;
-  let lastFlushResult: string | null = null;
-  let lastFlushKind: string | null = null;
-  let lastPayloadCount: number | null = null;
+  let error: string | null = null;
+  let fetching = false;
+  let fetchGen = 0;
+  let lastFetchAt = 0;
+  let lastFetchKind: string | null = null;
+  let lastFetchResult: string | null = null;
   let lastBoardName: string | null = null;
+  let lastBoardCount: number | null = null;
   let page: PageState | null = null;
-
   let pickTimer: ReturnType<typeof setTimeout> | undefined;
-  let pending: PendingPickEvent | null = null;
-  let lastFlushSig = '';
-  let undelivered: ReturnType<typeof toPickMessage> | null = null;
 
-  const snapshot = (): Status => {
-    const now = Date.now();
-    return {
-      draftId,
-      draftName,
-      sleeperLive: Boolean(draftId) && now - sleeperSeenAt < STALE_MS,
-      appLive: now - appSeenAt < STALE_MS,
-      sleeperSeenAt,
-      appSeenAt,
-      lastPickAt,
-      lastPickKind,
-      lastFlushAt,
-      lastFlushResult,
-      lastFlushKind,
-      lastPayloadCount,
-      lastBoardName,
-      page,
-    };
+  const now = () => Date.now();
+
+  const linkState = (): LinkState => {
+    if (error) return 'error';
+    if (fetching && !snapshot) return 'connecting';
+    if (link && snapshot) {
+      return providerSeenAt && now() - providerSeenAt < STALE_MS ? 'linked' : 'stale';
+    }
+    if (fetching || link) return 'connecting';
+    return 'idle';
   };
 
+  const linkStatus = (): LinkStatus => ({
+    wire: WIRE_VERSION,
+    state: linkState(),
+    draftKey: link?.draftKey ?? null,
+    draftName: snapshot?.draftName ?? tabDraftName,
+    error,
+    updatedAt: now(),
+  });
+
+  const debug = (): DebugStatus => ({
+    link: linkStatus(),
+    snapshot,
+    providerId: link?.providerId ?? null,
+    providerSeenAt,
+    appSeenAt,
+    lastFetchAt,
+    lastFetchKind,
+    lastFetchResult,
+    lastBoardName,
+    lastBoardCount,
+    page,
+  });
+
   const persist = () => {
-    void chrome.storage.session.set({ [DRAFT_KEY]: draftId, [NAME_KEY]: draftName });
-    chrome.action.setBadgeText({ text: snapshot().sleeperLive ? 'ON' : '' });
+    void chrome.storage.session.set({ [LINK_KEY]: link });
+    chrome.action.setBadgeText({ text: linkStatus().state === 'linked' ? 'ON' : '' });
     chrome.action.setBadgeBackgroundColor({ color: '#3d9b6a' });
   };
 
@@ -101,135 +123,190 @@ export default defineBackground(() => {
 
   const isApp = (url: string) =>
     url.includes('localhost') || url.includes('127.0.0.1') || url.includes('draftrr.app');
-  const isSleeper = (url: string) => url.includes('sleeper.com') || url.includes('sleeper.app');
+  const isProviderPage = (url: string) => Boolean(providerForUrl(url));
 
-  const flushPicks = () => {
-    pickTimer = undefined;
-    const event = pending;
-    pending = null;
-    if (!event) return;
-    const sig = pickEventSignature(event);
-    lastFlushAt = Date.now();
-    lastFlushKind = event.kind;
-    if (event.kind === 'payload' && sig === lastFlushSig) {
-      lastFlushResult = 'deduped';
+  const pushLink = () => {
+    persist();
+    const status = linkStatus();
+    void notify({ type: WIRE_MSG.link, status }, isApp);
+    void notify({ type: 'draftrr:status', appLive: now() - appSeenAt < STALE_MS }, isProviderPage);
+  };
+
+  const pushSnapshot = () => {
+    if (!snapshot) return;
+    void notify({ type: WIRE_MSG.snapshot, snapshot }, isApp);
+  };
+
+  const fetchAndPush = async (kind: string) => {
+    if (!link) return;
+    const current = link;
+    const gen = ++fetchGen;
+    fetching = true;
+    error = null;
+    lastFetchAt = now();
+    lastFetchKind = kind;
+    pushLink();
+    try {
+      const provider = providerById(current.providerId);
+      if (!provider) throw new Error("Couldn't recognize that draft URL.");
+      const next = await provider.fetchSnapshot(current.draftId);
+      if (gen !== fetchGen || link?.draftKey !== current.draftKey) return;
+      snapshot = next;
+      error = null;
+      lastFetchResult = 'ok';
+      pushSnapshot();
+    } catch (err) {
+      if (gen !== fetchGen) return;
+      error = err instanceof Error ? err.message : 'Failed to load draft';
+      lastFetchResult = 'error';
+    } finally {
+      if (gen === fetchGen) fetching = false;
+      pushLink();
+    }
+  };
+
+  const scheduleFetch = (kind: string) => {
+    if (pickTimer !== undefined) clearTimeout(pickTimer);
+    pickTimer = setTimeout(() => {
+      pickTimer = undefined;
+      void fetchAndPush(kind);
+    }, PICK_DEBOUNCE_MS);
+  };
+
+  const connectTo = (providerId: string, draftId: string, kind: string, immediate: boolean) => {
+    const draftKey = makeDraftKey(providerId, draftId);
+    const same = link?.draftKey === draftKey;
+    if (!same) {
+      link = { providerId, draftId, draftKey };
+      snapshot = null;
+      error = null;
+    }
+    persist();
+    if (immediate) void fetchAndPush(kind);
+    else scheduleFetch(kind);
+  };
+
+  const connectInput = (input: string, kind: string) => {
+    const resolved = resolveConnect(input);
+    if (!resolved) {
+      error = "Couldn't recognize that draft URL.";
+      fetching = false;
+      pushLink();
       return;
     }
-    if (event.kind === 'payload') lastFlushSig = sig;
-    const message = toPickMessage(event);
-    void notify(message, isApp).then((ok) => {
-      lastFlushResult = ok ? 'sent' : 'undelivered';
-      if (!ok) undelivered = message;
-    });
+    connectTo(resolved.provider.id, resolved.draftId, kind, true);
   };
 
-  const schedulePickEvent = (incoming: PendingPickEvent, kind: string) => {
-    lastPickAt = Date.now();
-    lastPickKind = kind;
-    if (incoming.kind === 'payload') lastPayloadCount = incoming.picks.length;
-    pending = mergePending(pending, incoming);
-    if (pickTimer !== undefined) clearTimeout(pickTimer);
-    pickTimer = setTimeout(flushPicks, PICK_DEBOUNCE_MS);
-  };
-
-  const pushStatus = () => {
-    const status = snapshot();
-    void notify({ type: 'draftrr:status', ...status }, (url) => isApp(url) || isSleeper(url));
+  const disconnect = () => {
+    fetchGen += 1;
+    link = null;
+    snapshot = null;
+    tabDraftName = null;
+    error = null;
+    fetching = false;
+    providerSeenAt = 0;
+    persist();
+    pushLink();
   };
 
   const draftFromOpenTabs = async () => {
-    const tabs = await chrome.tabs.query({ url: [...SLEEPER_HOSTS] });
+    const tabs = await chrome.tabs.query({ url: allHostMatches() });
     for (const tab of tabs) {
-      const id = parseSleeperDraftId(tab.url ?? '');
+      const provider = providerForUrl(tab.url ?? '');
+      if (!provider) continue;
+      const id = provider.parseDraftId(tab.url ?? '');
       if (!id) continue;
-      const title = (tab.title ?? '').replace(/\s*[|\-–•]\s*Sleeper.*$/i, '').trim();
-      return {
-        draftId: id,
-        draftName: title && title.toLowerCase() !== 'sleeper' ? title : null,
-      };
+      const title = provider.draftNameFromTitle(tab.title ?? '');
+      return { provider, draftId: id, draftName: title };
     }
     return null;
   };
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type === 'draftrr:sleeper-heartbeat') {
-      const prevId = draftId;
-      const wasLive = snapshot().sleeperLive;
-      draftId = (message.draftId as string | null) ?? null;
-      draftName = (message.draftName as string | null) ?? draftName;
-      sleeperSeenAt = Date.now();
+    if (message?.type === 'draftrr:provider-heartbeat') {
+      const providerId = String(message.provider ?? '');
+      const draftId = (message.draftId as string | null) ?? null;
+      if (typeof message.draftName === 'string' && message.draftName) {
+        tabDraftName = message.draftName;
+      }
       if (message.board && typeof message.board === 'object') {
         const board = message.board as { count?: number; lastName?: string };
-        if (typeof board.count === 'number') lastPayloadCount = board.count;
+        if (typeof board.count === 'number') lastBoardCount = board.count;
         if (typeof board.lastName === 'string' && board.lastName) lastBoardName = board.lastName;
       }
-      persist();
-      const nowLive = snapshot().sleeperLive;
-      if (draftId && (draftId !== prevId || !wasLive) && nowLive) {
-        lastFlushSig = '';
-        schedulePickEvent({ kind: 'refresh' }, 'sleeper-live');
+      if (draftId && providerById(providerId)) {
+        providerSeenAt = now();
+        const wasLinked = Boolean(link);
+        const same = link?.providerId === providerId && link?.draftId === draftId;
+        if (!same) {
+          connectTo(providerId, draftId, 'heartbeat', true);
+        } else if (!wasLinked || !snapshot) {
+          void fetchAndPush('heartbeat');
+        } else {
+          persist();
+          pushLink();
+        }
       }
-      pushStatus();
-      sendResponse(snapshot());
+      sendResponse(debug());
       return true;
     }
 
-    if (message?.type === 'draftrr:sleeper-disconnect') {
-      sleeperSeenAt = 0;
+    if (message?.type === 'draftrr:provider-disconnect') {
+      providerSeenAt = 0;
       persist();
-      pushStatus();
-      sendResponse(snapshot());
+      pushLink();
+      sendResponse(debug());
+      return true;
+    }
+
+    if (message?.type === 'draftrr:board-changed') {
+      if (typeof message.count === 'number') lastBoardCount = message.count;
+      if (typeof message.lastName === 'string' && message.lastName) {
+        lastBoardName = message.lastName as string;
+      }
+      if (link) scheduleFetch('board');
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    if (message?.type === WIRE_MSG.connect) {
+      connectInput(String(message.input ?? ''), 'connect');
+      sendResponse(debug());
+      return true;
+    }
+
+    if (message?.type === WIRE_MSG.refresh) {
+      if (link) void fetchAndPush('refresh');
+      sendResponse(debug());
+      return true;
+    }
+
+    if (message?.type === WIRE_MSG.disconnect) {
+      disconnect();
+      sendResponse(debug());
       return true;
     }
 
     if (message?.type === 'draftrr:app-heartbeat') {
-      appSeenAt = Date.now();
+      appSeenAt = now();
       if (message.page && typeof message.page === 'object') {
         page = message.page as PageState;
       }
-      const pendingPicks = undelivered;
-      undelivered = null;
-      pushStatus();
-      sendResponse(pendingPicks ? { ...snapshot(), pendingPicks } : snapshot());
-      return true;
-    }
-
-    if (message?.type === 'draftrr:picks-changed') {
-      if (typeof message.count === 'number') lastPayloadCount = message.count;
-      if (typeof message.lastName === 'string' && message.lastName) {
-        lastBoardName = message.lastName as string;
-      }
-      schedulePickEvent({ kind: 'refresh' }, 'dom');
-      sendResponse({ ok: true });
-      return true;
-    }
-
-    if (message?.type === 'draftrr:picks-payload') {
-      if (Array.isArray(message.picks)) {
-        schedulePickEvent(
-          {
-            kind: 'payload',
-            draftId: message.draftId as string | undefined,
-            picks: message.picks as unknown[],
-          },
-          'payload',
-        );
-      } else {
-        schedulePickEvent({ kind: 'refresh' }, 'network');
-      }
-      sendResponse({ ok: true });
+      pushLink();
+      sendResponse({ link: linkStatus(), snapshot });
       return true;
     }
 
     if (message?.type === 'draftrr:get-draft') {
       void (async () => {
-        const fromTab = await draftFromOpenTabs();
-        if (fromTab) {
-          draftId = fromTab.draftId;
-          draftName = fromTab.draftName ?? draftName;
-          persist();
+        if (!link) {
+          const fromTab = await draftFromOpenTabs();
+          if (fromTab) {
+            tabDraftName = fromTab.draftName;
+            connectTo(fromTab.provider.id, fromTab.draftId, 'popup', true);
+          }
         }
-        sendResponse(snapshot());
+        sendResponse(debug());
       })();
       return true;
     }

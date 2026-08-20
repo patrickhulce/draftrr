@@ -1,4 +1,5 @@
-import { parseSleeperDraftId } from '~/lib/draftId';
+import type { DraftSnapshot, LinkStatus } from '@draftrr/wire';
+import { providerForUrl } from '~/lib/providers';
 
 const statusEl = document.getElementById('status');
 const openEl = document.getElementById('open') as HTMLAnchorElement | null;
@@ -7,26 +8,23 @@ const pageEl = document.getElementById('page');
 const beatsEl = document.getElementById('beats');
 
 type DebugStatus = {
-  draftId?: string | null;
-  draftName?: string | null;
-  sleeperLive?: boolean;
-  appLive?: boolean;
-  sleeperSeenAt?: number;
+  link?: LinkStatus;
+  snapshot?: DraftSnapshot | null;
+  providerId?: string | null;
+  providerSeenAt?: number;
   appSeenAt?: number;
-  lastPickAt?: number;
-  lastPickKind?: string | null;
-  lastFlushAt?: number;
-  lastFlushResult?: string | null;
-  lastFlushKind?: string | null;
-  lastPayloadCount?: number | null;
+  lastFetchAt?: number;
+  lastFetchKind?: string | null;
+  lastFetchResult?: string | null;
   lastBoardName?: string | null;
+  lastBoardCount?: number | null;
   page?: {
     href?: string;
     picks?: string;
-    sleeperStatus?: string;
-    sleeperId?: string;
+    draftKey?: string;
+    phase?: string;
     pageExt?: string;
-    pageLive?: string;
+    pageLinked?: string;
     pageStatusAt?: string;
   } | null;
 };
@@ -58,56 +56,52 @@ function rows(items: [string, string][]): string {
 function render(opts: {
   live: boolean;
   name: string | null;
-  id: string | null;
+  key: string | null;
   appLive: boolean;
   debug: DebugStatus;
 }) {
   if (dotEl) dotEl.style.background = opts.live ? '#34d399' : '#f43f5e';
   if (statusEl) {
     statusEl.textContent = opts.live
-      ? (opts.name ?? `Sleeper ${opts.id}`)
+      ? (opts.name ?? opts.key ?? 'Draft connected')
       : opts.appLive
-        ? 'Sleeper draft page not open'
-        : 'No live Sleeper draft';
+        ? 'Draft page not open'
+        : 'No draft connected';
   }
-  if (openEl && opts.id) {
-    openEl.href = `http://localhost:3000/draft/?sleeper=${opts.id}`;
+  if (openEl && opts.key) {
+    openEl.href = `http://localhost:3000/draft/?connect=${encodeURIComponent(opts.key)}`;
   }
   const page = opts.debug.page ?? {};
   if (pageEl) {
     pageEl.innerHTML = rows([
       ['url', pathOf(page.href)],
-      ['picks', page.picks ?? ''],
-      ['sleeper status', page.sleeperStatus ?? ''],
-      ['sleeper id', page.sleeperId || opts.debug.draftId || ''],
+      ['picks', page.picks ?? String(opts.debug.snapshot?.drafted.length ?? '')],
+      ['draft key', page.draftKey || opts.key || ''],
+      ['phase', page.phase || opts.debug.snapshot?.phase || ''],
       ['page sees ext', page.pageExt === '1' ? 'yes' : page.pageExt === '0' ? 'no' : ''],
-      ['page sees live', page.pageLive === '1' ? 'yes' : page.pageLive === '0' ? 'no' : ''],
+      ['page sees live', page.pageLinked === '1' ? 'yes' : page.pageLinked === '0' ? 'no' : ''],
       ['page last status', ago(page.pageStatusAt ? Number(page.pageStatusAt) : undefined)],
     ]);
   }
   if (beatsEl) {
     beatsEl.innerHTML = rows([
       [
-        'sleeper beat',
-        `${opts.debug.sleeperLive ? 'live' : 'stale'} · ${ago(opts.debug.sleeperSeenAt)}`,
+        'provider beat',
+        `${opts.debug.link?.state === 'linked' ? 'live' : (opts.debug.link?.state ?? 'idle')} · ${ago(opts.debug.providerSeenAt)}`,
       ],
-      ['app beat', `${opts.debug.appLive ? 'live' : 'stale'} · ${ago(opts.debug.appSeenAt)}`],
+      ['app beat', `${opts.appLive ? 'live' : 'stale'} · ${ago(opts.debug.appSeenAt)}`],
       [
-        'sleeper board',
-        opts.debug.lastPayloadCount != null
-          ? `${opts.debug.lastPayloadCount} picks${opts.debug.lastBoardName ? ` · ${opts.debug.lastBoardName}` : ''}`
-          : '—',
-      ],
-      [
-        'last pick ping',
-        opts.debug.lastPickKind
-          ? `${opts.debug.lastPickKind} · ${ago(opts.debug.lastPickAt)}`
-          : 'never',
+        'board',
+        opts.debug.lastBoardCount != null
+          ? `${opts.debug.lastBoardCount} picks${opts.debug.lastBoardName ? ` · ${opts.debug.lastBoardName}` : ''}`
+          : opts.debug.snapshot
+            ? `${opts.debug.snapshot.drafted.length} picks`
+            : '—',
       ],
       [
-        'last flush',
-        opts.debug.lastFlushResult
-          ? `${opts.debug.lastFlushKind ?? ''} ${opts.debug.lastFlushResult} · ${ago(opts.debug.lastFlushAt)}`
+        'last fetch',
+        opts.debug.lastFetchResult
+          ? `${opts.debug.lastFetchKind ?? ''} ${opts.debug.lastFetchResult} · ${ago(opts.debug.lastFetchAt)}`
           : 'never',
       ],
     ]);
@@ -116,20 +110,20 @@ function render(opts: {
 
 function refresh() {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const tabId = parseSleeperDraftId(tabs[0]?.url ?? '');
-    const tabName = (tabs[0]?.title ?? '').replace(/\s*[|\-–•]\s*Sleeper.*$/i, '').trim();
+    const tabUrl = tabs[0]?.url ?? '';
+    const provider = providerForUrl(tabUrl);
+    const tabId = provider?.parseDraftId(tabUrl) ?? null;
+    const tabName = provider?.draftNameFromTitle(tabs[0]?.title ?? '') ?? null;
     chrome.runtime.sendMessage({ type: 'draftrr:get-draft' }, (res: DebugStatus | undefined) => {
       const debug = res ?? {};
-      const id = tabId ?? debug.draftId ?? null;
-      const live = Boolean(tabId || (debug.sleeperLive && id));
+      const key = debug.link?.draftKey ?? (provider && tabId ? `${provider.id}:${tabId}` : null);
+      const live = Boolean(tabId || debug.link?.state === 'linked');
+      const appLive = Boolean(debug.appSeenAt && Date.now() - debug.appSeenAt < 8000);
       render({
         live,
-        id,
-        name:
-          (tabId && tabName && tabName.toLowerCase() !== 'sleeper' ? tabName : null) ??
-          debug.draftName ??
-          null,
-        appLive: Boolean(debug.appLive),
+        key,
+        name: tabName ?? debug.snapshot?.draftName ?? debug.link?.draftName ?? null,
+        appLive,
         debug,
       });
     });
