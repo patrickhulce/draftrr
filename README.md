@@ -1,12 +1,13 @@
 # draftrr
 
-Local-first fantasy football draft assistant. Rank players into tiers, run a live board with availability projections, and optionally mirror a Sleeper draft through a Chrome extension.
+Local-first fantasy football draft assistant. Rank players into tiers, run a live board with availability projections, and optionally mirror a live draft through a Chrome extension.
 
 ## Apps
 
 - `apps/web` — Next.js static UI (`/players`, `/rank`, `/draft`, `/history`)
-- `apps/extension` — MV3 companion that publishes the active Sleeper draft id
-- `packages/core` — CSV import, name matching, draft engine, Sleeper client
+- `apps/extension` — MV3 companion that publishes the active draft to the web app
+- `packages/core` — CSV import, name matching, draft engine
+- `packages/wire` — snapshot/link contract between the extension and the web app
 
 ## Commands
 
