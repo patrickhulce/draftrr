@@ -3,6 +3,7 @@ import { providerForUrl } from '~/lib/providers';
 
 const statusEl = document.getElementById('status');
 const openEl = document.getElementById('open') as HTMLAnchorElement | null;
+const activateEl = document.getElementById('activate') as HTMLButtonElement | null;
 const dotEl = document.getElementById('dot');
 const pageEl = document.getElementById('page');
 const beatsEl = document.getElementById('beats');
@@ -18,6 +19,7 @@ type DebugStatus = {
   lastFetchResult?: string | null;
   lastBoardName?: string | null;
   lastBoardCount?: number | null;
+  activeTabId?: number | null;
   page?: {
     href?: string;
     picks?: string;
@@ -28,6 +30,15 @@ type DebugStatus = {
     pageStatusAt?: string;
   } | null;
 };
+
+type CurrentDraft = {
+  tabId: number;
+  providerId: string;
+  draftId: string;
+  draftName: string | null;
+};
+
+let currentDraft: CurrentDraft | null = null;
 
 function ago(ts: number | undefined): string {
   if (!ts) return 'never';
@@ -55,6 +66,8 @@ function rows(items: [string, string][]): string {
 
 function render(opts: {
   live: boolean;
+  thisTabActive: boolean;
+  onDraftPage: boolean;
   name: string | null;
   key: string | null;
   appLive: boolean;
@@ -64,12 +77,24 @@ function render(opts: {
   if (statusEl) {
     statusEl.textContent = opts.live
       ? (opts.name ?? opts.key ?? 'Draft connected')
-      : opts.appLive
-        ? 'Draft page not open'
-        : 'No draft connected';
+      : opts.thisTabActive
+        ? opts.debug.link?.state === 'connecting'
+          ? 'Connecting…'
+          : (opts.name ?? opts.key ?? 'Draft connected')
+        : opts.onDraftPage
+          ? 'This draft is idle'
+          : opts.appLive
+            ? 'Draft page not open'
+            : 'Activate a draft tab';
   }
   if (openEl && opts.key) {
     openEl.href = `http://localhost:3000/draft/?connect=${encodeURIComponent(opts.key)}`;
+  }
+  if (activateEl) {
+    const show = opts.onDraftPage;
+    activateEl.classList.toggle('visible', show);
+    activateEl.classList.toggle('stop', opts.thisTabActive);
+    activateEl.textContent = opts.thisTabActive ? 'Stop' : 'Activate';
   }
   const page = opts.debug.page ?? {};
   if (pageEl) {
@@ -110,17 +135,28 @@ function render(opts: {
 
 function refresh() {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const tabUrl = tabs[0]?.url ?? '';
+    const tab = tabs[0];
+    const tabUrl = tab?.url ?? '';
     const provider = providerForUrl(tabUrl);
-    const tabId = provider?.parseDraftId(tabUrl) ?? null;
-    const tabName = provider?.draftNameFromTitle(tabs[0]?.title ?? '') ?? null;
+    const draftId = provider?.parseDraftId(tabUrl) ?? null;
+    const tabName = provider?.draftNameFromTitle(tab?.title ?? '') ?? null;
+    currentDraft =
+      tab?.id != null && provider && draftId
+        ? { tabId: tab.id, providerId: provider.id, draftId, draftName: tabName }
+        : null;
     chrome.runtime.sendMessage({ type: 'draftrr:get-draft' }, (res: DebugStatus | undefined) => {
       const debug = res ?? {};
-      const key = debug.link?.draftKey ?? (provider && tabId ? `${provider.id}:${tabId}` : null);
-      const live = Boolean(tabId || debug.link?.state === 'linked');
+      const key =
+        debug.link?.draftKey ?? (provider && draftId ? `${provider.id}:${draftId}` : null);
+      const thisTabActive = Boolean(
+        currentDraft && debug.activeTabId != null && debug.activeTabId === currentDraft.tabId,
+      );
+      const live = thisTabActive && debug.link?.state === 'linked';
       const appLive = Boolean(debug.appSeenAt && Date.now() - debug.appSeenAt < 8000);
       render({
         live,
+        thisTabActive,
+        onDraftPage: Boolean(currentDraft),
         key,
         name: tabName ?? debug.snapshot?.draftName ?? debug.link?.draftName ?? null,
         appLive,
@@ -129,6 +165,21 @@ function refresh() {
     });
   });
 }
+
+activateEl?.addEventListener('click', () => {
+  if (!currentDraft) return;
+  const stopping = activateEl.classList.contains('stop');
+  chrome.runtime.sendMessage(
+    {
+      type: stopping ? 'draftrr:deactivate' : 'draftrr:activate',
+      tabId: currentDraft.tabId,
+      provider: currentDraft.providerId,
+      draftId: currentDraft.draftId,
+      draftName: currentDraft.draftName,
+    },
+    () => refresh(),
+  );
+});
 
 refresh();
 window.setInterval(refresh, 1000);

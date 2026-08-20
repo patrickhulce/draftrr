@@ -40,6 +40,28 @@
         text-transform: uppercase;
         color: #6b7280;
       }
+      #activate {
+        display: none;
+        width: 100%;
+        margin: 8px 0 0;
+        padding: 8px 10px;
+        border: none;
+        border-radius: 8px;
+        background: #3d9b6a;
+        color: #ecfdf5;
+        font:
+          600 13px/1.2 system-ui,
+          sans-serif;
+        cursor: pointer;
+      }
+      #activate.visible {
+        display: block;
+      }
+      #activate.stop {
+        background: #1f2937;
+        color: #9aa4b2;
+        box-shadow: 0 0 0 1px #ffffff22;
+      }
     </style>
   </head>
   <body>
@@ -52,6 +74,7 @@
       <span id="status">Checking…</span>
     </p>
     <p><a id="open" href="http://localhost:3000/draft/" target="_blank">Open in draftrr</a></p>
+    <button id="activate" type="button">Activate</button>
     <h2>Page</h2>
     <div id="page"></div>
     <h2>Heartbeats</h2>

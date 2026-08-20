@@ -6,13 +6,7 @@ import {
   type LinkStatus,
 } from '@draftrr/wire';
 import { PICK_DEBOUNCE_MS } from '~/lib/pickDebounce';
-import {
-  allHostMatches,
-  makeDraftKey,
-  providerById,
-  providerForUrl,
-  resolveConnect,
-} from '~/lib/providers';
+import { makeDraftKey, providerById, providerForUrl, resolveConnect } from '~/lib/providers';
 
 const STALE_MS = 8000;
 const LINK_KEY = 'activeLink';
@@ -33,6 +27,11 @@ type Link = {
   draftKey: string;
 };
 
+type StoredLink = {
+  link: Link | null;
+  activeTabId: number | null;
+};
+
 type DebugStatus = {
   link: LinkStatus;
   snapshot: DraftSnapshot | null;
@@ -45,12 +44,30 @@ type DebugStatus = {
   lastBoardName: string | null;
   lastBoardCount: number | null;
   page: PageState | null;
+  activeTabId: number | null;
+  tabId: number | null;
+  thisTabActive: boolean;
 };
+
+function isStoredLink(value: unknown): value is StoredLink {
+  return typeof value === 'object' && value !== null && 'link' in value && 'activeTabId' in value;
+}
+
+function isLink(value: unknown): value is Link {
+  if (typeof value !== 'object' || value === null) return false;
+  const rec = value as Record<string, unknown>;
+  return (
+    typeof rec.providerId === 'string' &&
+    typeof rec.draftId === 'string' &&
+    typeof rec.draftKey === 'string'
+  );
+}
 
 export default defineBackground(() => {
   let link: Link | null = null;
   let snapshot: DraftSnapshot | null = null;
   let tabDraftName: string | null = null;
+  let activeTabId: number | null = null;
   let providerSeenAt = 0;
   let appSeenAt = 0;
   let error: string | null = null;
@@ -63,8 +80,22 @@ export default defineBackground(() => {
   let lastBoardCount: number | null = null;
   let page: PageState | null = null;
   let pickTimer: ReturnType<typeof setTimeout> | undefined;
+  let hydrated = false;
 
   const now = () => Date.now();
+
+  const senderTabId = (sender: chrome.runtime.MessageSender) => sender.tab?.id ?? null;
+
+  const messageTabId = (sender: chrome.runtime.MessageSender, message: { tabId?: unknown }) => {
+    const fromSender = senderTabId(sender);
+    if (fromSender != null) return fromSender;
+    return typeof message.tabId === 'number' ? message.tabId : null;
+  };
+
+  const isActiveTab = (sender: chrome.runtime.MessageSender, message: { tabId?: unknown } = {}) => {
+    const tabId = messageTabId(sender, message);
+    return tabId != null && tabId === activeTabId;
+  };
 
   const linkState = (): LinkState => {
     if (error) return 'error';
@@ -85,22 +116,30 @@ export default defineBackground(() => {
     updatedAt: now(),
   });
 
-  const debug = (): DebugStatus => ({
-    link: linkStatus(),
-    snapshot,
-    providerId: link?.providerId ?? null,
-    providerSeenAt,
-    appSeenAt,
-    lastFetchAt,
-    lastFetchKind,
-    lastFetchResult,
-    lastBoardName,
-    lastBoardCount,
-    page,
-  });
+  const debug = (sender?: chrome.runtime.MessageSender): DebugStatus => {
+    const tabId = sender ? senderTabId(sender) : null;
+    return {
+      link: linkStatus(),
+      snapshot,
+      providerId: link?.providerId ?? null,
+      providerSeenAt,
+      appSeenAt,
+      lastFetchAt,
+      lastFetchKind,
+      lastFetchResult,
+      lastBoardName,
+      lastBoardCount,
+      page,
+      activeTabId,
+      tabId,
+      thisTabActive: tabId != null && tabId === activeTabId,
+    };
+  };
 
   const persist = () => {
-    void chrome.storage.session.set({ [LINK_KEY]: link });
+    hydrated = true;
+    const stored: StoredLink = { link, activeTabId };
+    void chrome.storage.session.set({ [LINK_KEY]: stored });
     chrome.action.setBadgeText({ text: linkStatus().state === 'linked' ? 'ON' : '' });
     chrome.action.setBadgeBackgroundColor({ color: '#3d9b6a' });
   };
@@ -129,7 +168,14 @@ export default defineBackground(() => {
     persist();
     const status = linkStatus();
     void notify({ type: WIRE_MSG.link, status }, isApp);
-    void notify({ type: 'draftrr:status', appLive: now() - appSeenAt < STALE_MS }, isProviderPage);
+    void notify(
+      {
+        type: 'draftrr:status',
+        appLive: now() - appSeenAt < STALE_MS,
+        activeTabId,
+      },
+      isProviderPage,
+    );
   };
 
   const pushSnapshot = () => {
@@ -197,6 +243,63 @@ export default defineBackground(() => {
     connectTo(resolved.provider.id, resolved.draftId, kind, true);
   };
 
+  const recordBoard = (message: { board?: unknown; count?: unknown; lastName?: unknown }) => {
+    const board =
+      message.board && typeof message.board === 'object'
+        ? (message.board as { count?: number; lastName?: string })
+        : message;
+    if (typeof board.count === 'number') lastBoardCount = board.count;
+    if (typeof board.lastName === 'string' && board.lastName) lastBoardName = board.lastName;
+  };
+
+  const tabMatchesLink = (url: string | undefined) => {
+    if (!link || !url) return false;
+    const provider = providerForUrl(url);
+    const draftId = provider?.parseDraftId(url) ?? null;
+    return Boolean(provider && provider.id === link.providerId && draftId === link.draftId);
+  };
+
+  const touchActiveTab = async () => {
+    if (activeTabId == null || !link) return false;
+    try {
+      const tab = await chrome.tabs.get(activeTabId);
+      return tabMatchesLink(tab.url);
+    } catch {
+      return false;
+    }
+  };
+
+  const pollActive = async (kind: string) => {
+    if (activeTabId == null || !link) return false;
+    const open = await touchActiveTab();
+    if (!open) {
+      if (providerSeenAt) markProviderStale();
+      return false;
+    }
+    providerSeenAt = now();
+    if (!fetching && now() - lastFetchAt >= PICK_DEBOUNCE_MS) {
+      void fetchAndPush(kind);
+    } else {
+      persist();
+      pushLink();
+    }
+    return true;
+  };
+
+  const keepAlive = (providerId: string, draftId: string, kind: string) => {
+    providerSeenAt = now();
+    const wasLinked = Boolean(link);
+    const same = link?.providerId === providerId && link?.draftId === draftId;
+    if (!same) {
+      connectTo(providerId, draftId, kind, true);
+    } else if (!wasLinked || !snapshot) {
+      void fetchAndPush(kind);
+    } else {
+      persist();
+      pushLink();
+    }
+  };
+
   const disconnect = () => {
     fetchGen += 1;
     link = null;
@@ -205,85 +308,130 @@ export default defineBackground(() => {
     error = null;
     fetching = false;
     providerSeenAt = 0;
+    activeTabId = null;
     persist();
     pushLink();
   };
 
-  const draftFromOpenTabs = async () => {
-    const tabs = await chrome.tabs.query({ url: allHostMatches() });
-    for (const tab of tabs) {
-      const provider = providerForUrl(tab.url ?? '');
-      if (!provider) continue;
-      const id = provider.parseDraftId(tab.url ?? '');
-      if (!id) continue;
-      const title = provider.draftNameFromTitle(tab.title ?? '');
-      return { provider, draftId: id, draftName: title };
-    }
-    return null;
+  const markProviderStale = () => {
+    providerSeenAt = 0;
+    persist();
+    pushLink();
   };
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  void chrome.storage.session.get(LINK_KEY).then(async (data) => {
+    if (hydrated) return;
+    const stored = data[LINK_KEY];
+    if (!isStoredLink(stored)) {
+      hydrated = true;
+      return;
+    }
+    let restoredTab: number | null = null;
+    if (typeof stored.activeTabId === 'number') {
+      try {
+        await chrome.tabs.get(stored.activeTabId);
+        restoredTab = stored.activeTabId;
+      } catch {
+        restoredTab = null;
+      }
+    }
+    if (hydrated) return;
+    hydrated = true;
+    if (isLink(stored.link)) link = stored.link;
+    activeTabId = restoredTab;
+    if (!link) {
+      pushLink();
+      return;
+    }
+    const open = await pollActive('restore');
+    if (!open) void fetchAndPush('restore');
+  });
+
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    if (tabId !== activeTabId) return;
+    activeTabId = null;
+    markProviderStale();
+  });
+
+  chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+    if (tabId !== activeTabId || !link) return;
+    const url = tab.url ?? info.url;
+    if (!url) return;
+    if (tabMatchesLink(url)) {
+      providerSeenAt = now();
+      pushLink();
+      return;
+    }
+    if (info.url) markProviderStale();
+  });
+
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === 'draftrr:provider-heartbeat') {
       const providerId = String(message.provider ?? '');
       const draftId = (message.draftId as string | null) ?? null;
-      if (typeof message.draftName === 'string' && message.draftName) {
-        tabDraftName = message.draftName;
-      }
-      if (message.board && typeof message.board === 'object') {
-        const board = message.board as { count?: number; lastName?: string };
-        if (typeof board.count === 'number') lastBoardCount = board.count;
-        if (typeof board.lastName === 'string' && board.lastName) lastBoardName = board.lastName;
-      }
-      if (draftId && providerById(providerId)) {
-        providerSeenAt = now();
-        const wasLinked = Boolean(link);
-        const same = link?.providerId === providerId && link?.draftId === draftId;
-        if (!same) {
-          connectTo(providerId, draftId, 'heartbeat', true);
-        } else if (!wasLinked || !snapshot) {
-          void fetchAndPush('heartbeat');
-        } else {
-          persist();
-          pushLink();
+      if (isActiveTab(sender) && draftId && providerById(providerId)) {
+        if (typeof message.draftName === 'string' && message.draftName) {
+          tabDraftName = message.draftName;
         }
+        recordBoard(message);
+        keepAlive(providerId, draftId, 'heartbeat');
       }
-      sendResponse(debug());
+      sendResponse(debug(sender));
+      return true;
+    }
+
+    if (message?.type === 'draftrr:activate') {
+      const tabId = messageTabId(sender, message);
+      const providerId = String(message.provider ?? '');
+      const draftId = (message.draftId as string | null) ?? null;
+      if (tabId != null && draftId && providerById(providerId)) {
+        activeTabId = tabId;
+        if (typeof message.draftName === 'string' && message.draftName) {
+          tabDraftName = message.draftName;
+        }
+        providerSeenAt = now();
+        connectTo(providerId, draftId, 'activate', true);
+      }
+      sendResponse(debug(sender));
+      return true;
+    }
+
+    if (message?.type === 'draftrr:deactivate') {
+      if (isActiveTab(sender, message)) disconnect();
+      sendResponse(debug(sender));
       return true;
     }
 
     if (message?.type === 'draftrr:provider-disconnect') {
-      providerSeenAt = 0;
-      persist();
-      pushLink();
-      sendResponse(debug());
+      if (isActiveTab(sender)) markProviderStale();
+      sendResponse(debug(sender));
       return true;
     }
 
     if (message?.type === 'draftrr:board-changed') {
-      if (typeof message.count === 'number') lastBoardCount = message.count;
-      if (typeof message.lastName === 'string' && message.lastName) {
-        lastBoardName = message.lastName as string;
+      if (isActiveTab(sender)) {
+        recordBoard(message);
+        if (link) scheduleFetch('board');
       }
-      if (link) scheduleFetch('board');
       sendResponse({ ok: true });
       return true;
     }
 
     if (message?.type === WIRE_MSG.connect) {
       connectInput(String(message.input ?? ''), 'connect');
-      sendResponse(debug());
+      sendResponse(debug(sender));
       return true;
     }
 
     if (message?.type === WIRE_MSG.refresh) {
       if (link) void fetchAndPush('refresh');
-      sendResponse(debug());
+      sendResponse(debug(sender));
       return true;
     }
 
     if (message?.type === WIRE_MSG.disconnect) {
       disconnect();
-      sendResponse(debug());
+      sendResponse(debug(sender));
       return true;
     }
 
@@ -292,22 +440,16 @@ export default defineBackground(() => {
       if (message.page && typeof message.page === 'object') {
         page = message.page as PageState;
       }
-      pushLink();
-      sendResponse({ link: linkStatus(), snapshot });
+      void (async () => {
+        if (activeTabId != null && link) await pollActive('poll');
+        else pushLink();
+        sendResponse({ link: linkStatus(), snapshot, activeTabId });
+      })();
       return true;
     }
 
     if (message?.type === 'draftrr:get-draft') {
-      void (async () => {
-        if (!link) {
-          const fromTab = await draftFromOpenTabs();
-          if (fromTab) {
-            tabDraftName = fromTab.draftName;
-            connectTo(fromTab.provider.id, fromTab.draftId, 'popup', true);
-          }
-        }
-        sendResponse(debug());
-      })();
+      sendResponse(debug(sender));
       return true;
     }
 
