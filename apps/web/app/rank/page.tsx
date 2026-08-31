@@ -22,12 +22,16 @@ import {
   importPlayersCsv,
   moveTierGroupTo,
   repairRankingItems,
+  rankingPlayerIds,
+  rankingVersionLabel,
+  hashRanking,
   tierGroupBoundary,
   tierGroupEnd,
   tierGroupStart,
   type Player,
   type RankingItem,
   type RankingSet,
+  type RankingVersion,
 } from '@draftrr/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { CirclePlus } from 'lucide-react';
@@ -449,6 +453,18 @@ export default function RankPage() {
     return items.map((item) => (item.kind === 'player' ? ++n : null));
   }, [items]);
   const current = sets.find((s) => s.id === activeId);
+  const versions =
+    useLiveQuery(
+      () => (activeId ? db.rankingVersions.where('rankingSetId').equals(activeId).toArray() : []),
+      [activeId],
+    ) ?? [];
+  const versionBadge = useMemo(() => {
+    const latest = versions.reduce<RankingVersion | undefined>(
+      (best, row) => (!best || row.version > best.version ? row : best),
+      undefined,
+    );
+    return rankingVersionLabel(latest, hashRanking(rankingPlayerIds(items)));
+  }, [versions, items]);
 
   /** The tier break being dragged by its label, plus the players travelling with it. */
   const moving = useMemo(() => {
@@ -666,6 +682,9 @@ export default function RankPage() {
           <p className="text-sm text-white/50">
             Drag players or slide the tier lines. Drag a tier by its label to move the whole group.
             Shift-click to multi-select. Alt+↑/↓ to nudge.
+          </p>
+          <p data-testid="ranking-version" className="mt-1 text-xs text-white/40">
+            {versionBadge}
           </p>
           <div className="mt-1 flex items-center gap-3 text-xs text-white/40">
             <span className="flex items-center gap-1.5">

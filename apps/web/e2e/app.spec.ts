@@ -124,6 +124,13 @@ test('dragging a tier by its line moves only the break', async ({ page }) => {
   expect(after.filter((kind) => kind !== 'tier')).toEqual(before.filter((kind) => kind !== 'tier'));
 });
 
+test('analyze page lists ranking sets', async ({ page }) => {
+  await page.goto('/analyze/');
+  await expect(page.getByRole('heading', { name: 'Analyze' })).toBeVisible();
+  await expect(page.getByTestId('ranking-set')).toBeVisible();
+  await expect(page.getByTestId('run-analysis')).toBeVisible();
+});
+
 test('draft flow can start and pick', async ({ page }) => {
   await page.goto('/draft/');
   await expect(page.getByRole('heading', { name: 'Start a draft' })).toBeVisible();

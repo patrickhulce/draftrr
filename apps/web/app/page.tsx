@@ -7,6 +7,11 @@ const cards = [
     title: 'Rank',
     body: 'Build personal tiers. Drag players and slide boundaries.',
   },
+  {
+    href: '/analyze/',
+    title: 'Analyze',
+    body: 'Version a ranking and simulate strategy outcomes before the draft.',
+  },
   { href: '/draft/', title: 'Draft', body: 'Live board, availability, and pick recommendations.' },
   { href: '/history/', title: 'History', body: 'Grade past drafts by starter points and bench.' },
 ];

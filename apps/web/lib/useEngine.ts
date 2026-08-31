@@ -37,11 +37,12 @@ export function useEngine(request: EngineRequest | null) {
     try {
       const worker = new Worker(new URL('./engine.worker.ts', import.meta.url));
       workerRef.current = worker;
-      worker.onmessage = (event: MessageEvent<{ id: number; result: SimulationResult }>) => {
-        if (event.data.id === idRef.current) {
-          setResult(event.data.result);
-          setRunning(false);
-        }
+      worker.onmessage = (event: MessageEvent<{ id: number; result?: SimulationResult }>) => {
+        if (event.data.id !== idRef.current) return;
+        if (!('result' in event.data) || !event.data.result) return;
+        if ('type' in event.data) return;
+        setResult(event.data.result);
+        setRunning(false);
       };
       worker.onerror = () => {
         workerRef.current?.terminate();
