@@ -34,6 +34,16 @@ export interface RankingSet {
   updatedAt: number;
 }
 
+/** Immutable snapshot of a ranking board, created only when an analysis runs. */
+export interface RankingVersion {
+  id?: number;
+  rankingSetId: string;
+  version: number;
+  hash: string;
+  playerIds: string[];
+  createdAt: number;
+}
+
 export interface RosterSlots {
   QB: number;
   RB: number;
@@ -124,6 +134,53 @@ export interface LineupResult {
   starterPoints: number;
   benchPoints: number;
   slotsFilled: Partial<Record<Position | 'FLEX', string[]>>;
+}
+
+export const ANALYSIS_STRATEGIES = ['balanced', 'doubleRb', 'earlyTe', 'earlyQb'] as const;
+export type AnalysisStrategyId = (typeof ANALYSIS_STRATEGIES)[number];
+
+export interface AnalysisRequest {
+  players: Player[];
+  settings: LeagueSettings;
+  mySlot: number;
+  rankingPlayerIds: string[];
+  outerSims: number;
+  innerSims: number;
+  seed: number;
+  temperature?: number;
+  stochasticProjections?: boolean;
+}
+
+export interface AnalysisStrategySummary {
+  id: AnalysisStrategyId;
+  count: number;
+  medianPpg: number;
+  medianRoster: {
+    slotsFilled: LineupResult['slotsFilled'];
+    benchIds: string[];
+    playerIds: string[];
+  } | null;
+  ppgSamples: number[];
+}
+
+export interface AnalysisResult {
+  ppgSamples: number[];
+  medianPpg: number;
+  strategies: AnalysisStrategySummary[];
+}
+
+export interface AnalysisRun {
+  id: string;
+  rankingSetId: string;
+  version: number;
+  hash: string;
+  settings: LeagueSettings;
+  mySlot: number;
+  seed: number;
+  outerSims: number;
+  innerSims: number;
+  createdAt: number;
+  result: AnalysisResult;
 }
 
 export interface AvailabilityRow {

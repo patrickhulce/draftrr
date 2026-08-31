@@ -2,6 +2,7 @@ import { DEFAULT_SIMS, DEFAULT_TEMPERATURE } from '../defaults.js';
 import type {
   AvailabilityRow,
   EngineRequest,
+  LineupResult,
   Player,
   Position,
   PositionBranch,
@@ -20,7 +21,7 @@ import { createRng, normalSample, weightedPick } from './rng.js';
 import { nextPickForSlot, pickOrder, worstCaseReachable } from './snake.js';
 
 const PROJECTED_POS: Position[] = ['RB', 'WR', 'TE', 'QB'];
-const BRANCH_POS: Position[] = ['RB', 'WR', 'QB', 'TE'];
+export const BRANCH_POS: Position[] = ['RB', 'WR', 'QB', 'TE'];
 const GRID_POS: Position[] = ['RB', 'WR', 'QB', 'TE'];
 const GRID_POS_SET = new Set<Position>(GRID_POS);
 const TOP_AT_NEXT = 4;
@@ -71,13 +72,13 @@ export function drawCpuBoard(
   return scored.map((x) => x.p);
 }
 
-function rankIndexOf(rankingPlayerIds: string[]): Map<string, number> {
+export function rankIndexOf(rankingPlayerIds: string[]): Map<string, number> {
   const index = new Map<string, number>();
   rankingPlayerIds.forEach((id, i) => index.set(id, i + 1));
   return index;
 }
 
-function slotBags(roster: Player[], slots: RosterSlots): ReturnType<typeof unfilledSlots>[] {
+export function slotBags(roster: Player[], slots: RosterSlots): ReturnType<typeof unfilledSlots>[] {
   const unfilled = unfilledSlots(roster, slots);
   return [
     unfilled.filter((s) => SKILL_SLOTS.has(s)),
@@ -172,7 +173,7 @@ function softmaxIndex(values: number[], temperature: number, rng: () => number):
   return weightedPick(weights, rng);
 }
 
-function userPick(
+export function userPick(
   remaining: Map<string, Player>,
   roster: Player[],
   rankIndex: Map<string, number>,
@@ -206,7 +207,7 @@ function userPick(
   return undefined;
 }
 
-function bestAtPos(
+export function bestAtPos(
   remaining: Map<string, Player>,
   roster: Player[],
   rankIndex: Map<string, number>,
@@ -227,7 +228,7 @@ function bestAtPos(
   return best;
 }
 
-function pickCpu(
+export function pickCpu(
   board: Player[],
   remaining: Map<string, Player>,
   roster: Player[],
@@ -241,7 +242,7 @@ function pickCpu(
   return undefined;
 }
 
-function cloneRosters(source: Map<number, Player[]>): Map<number, Player[]> {
+export function cloneRosters(source: Map<number, Player[]>): Map<number, Player[]> {
   const next = new Map<number, Player[]>();
   for (const [slot, roster] of source) next.set(slot, [...roster]);
   return next;
@@ -342,13 +343,13 @@ function initialTeamRosters(req: EngineRequest, byId: Map<string, Player>): Map<
   return rosters;
 }
 
-function medianValue(values: number[]): number {
+export function medianValue(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)]!;
 }
 
-function meanValue(values: number[]): number {
+export function meanValue(values: number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
@@ -357,7 +358,7 @@ function positionOpen(roster: Player[], slots: RosterSlots, position: Position):
   return canDraft(roster, slots, { position } as Player);
 }
 
-function isGridPos(position: Position): boolean {
+export function isGridPos(position: Position): boolean {
   return GRID_POS_SET.has(position);
 }
 
@@ -486,13 +487,19 @@ function buildPositionGrid(
   return cells;
 }
 
-function closestToMean<T extends { ppg: number }>(outcomes: T[]): T | undefined {
+export function closestToMean<T extends { ppg: number }>(outcomes: T[]): T | undefined {
+  return closestToTarget(outcomes, meanValue(outcomes.map((o) => o.ppg)));
+}
+
+export function closestToTarget<T extends { ppg: number }>(
+  outcomes: T[],
+  target: number,
+): T | undefined {
   if (outcomes.length === 0) return undefined;
-  const mean = meanValue(outcomes.map((o) => o.ppg));
   let best = outcomes[0]!;
-  let bestDist = Math.abs(best.ppg - mean);
+  let bestDist = Math.abs(best.ppg - target);
   for (const outcome of outcomes) {
-    const dist = Math.abs(outcome.ppg - mean);
+    const dist = Math.abs(outcome.ppg - target);
     if (dist < bestDist) {
       best = outcome;
       bestDist = dist;
@@ -515,6 +522,100 @@ function simPlayers(
     pool: players.filter((p) => !picked.has(p.id)),
     initialRosters: initialTeamRosters(req, byId),
   };
+}
+
+export function skillPickCount(roster: readonly Player[]): number {
+  return roster.filter((p) => isGridPos(p.position)).length;
+}
+
+export type ForcedDraftOutcome = {
+  positions: Position[];
+  playerIds: string[];
+  ppg: number;
+  lineup: LineupResult;
+};
+
+export interface EvaluateBranchesOpts {
+  positions?: Position[];
+  innerSims: number;
+  alreadyMine: Player[];
+  pool: Player[];
+  initialRosters: Map<number, Player[]>;
+  order: number[];
+  currentPickNo: number;
+  /** Overall pick to force. Defaults to currentPickNo. */
+  forcedPickNo?: number;
+  totalPicks: number;
+  mySlot: number;
+  slots: RosterSlots;
+  rankIndex: Map<string, number>;
+  stats: Map<string, { mean: number; stdev: number }>;
+  rng: () => number;
+  temperature: number;
+  simWorld?: () => { pool: Player[]; initialRosters: Map<number, Player[]> };
+}
+
+export function runForcedPositionOutcomes(
+  opts: EvaluateBranchesOpts,
+): Map<Position, ForcedDraftOutcome[]> {
+  const positions = opts.positions ?? BRANCH_POS;
+  const forcedByPos = new Map<Position, ForcedDraftOutcome[]>();
+  if (opts.innerSims <= 0) return forcedByPos;
+
+  for (const position of positions) {
+    if (!positionOpen(opts.alreadyMine, opts.slots, position)) continue;
+    if (!opts.pool.some((p) => p.position === position)) continue;
+    const outcomes: ForcedDraftOutcome[] = [];
+    for (let s = 0; s < opts.innerSims; s++) {
+      const world = opts.simWorld?.() ?? {
+        pool: opts.pool,
+        initialRosters: opts.initialRosters,
+      };
+      const board = drawCpuBoard(world.pool, opts.stats, opts.rng);
+      const draft = runDraft({
+        pool: world.pool,
+        initialRosters: world.initialRosters,
+        order: opts.order,
+        currentPickNo: opts.currentPickNo,
+        totalPicks: opts.totalPicks,
+        mySlot: opts.mySlot,
+        slots: opts.slots,
+        rankIndex: opts.rankIndex,
+        board,
+        rng: opts.rng,
+        temperature: opts.temperature,
+        forcedPos: position,
+        forcedPickNo: opts.forcedPickNo ?? opts.currentPickNo,
+      });
+      const lineup = optimalLineup(draft.roster, opts.slots);
+      outcomes.push({
+        ...outcomePicks(opts.alreadyMine, draft.myPicks),
+        ppg: lineup.starterPoints,
+        lineup,
+      });
+    }
+    if (outcomes.length) forcedByPos.set(position, outcomes);
+  }
+  return forcedByPos;
+}
+
+export function evaluatePositionBranches(
+  opts: EvaluateBranchesOpts,
+): Map<Position, { expectedPpg: number; pickPlayerId: string | null }> {
+  const remaining = new Map(opts.pool.map((p) => [p.id, p]));
+  const locked = Math.min(REC_PICKS, skillPickCount(opts.alreadyMine));
+  const evals = new Map<Position, { expectedPpg: number; pickPlayerId: string | null }>();
+  for (const [position, outcomes] of runForcedPositionOutcomes(opts)) {
+    const representative = closestToMean(outcomes);
+    evals.set(position, {
+      expectedPpg: meanValue(outcomes.map((o) => o.ppg)),
+      pickPlayerId:
+        representative?.playerIds[locked] ??
+        bestAtPos(remaining, opts.alreadyMine, opts.rankIndex, opts.slots, position)?.id ??
+        null,
+    });
+  }
+  return evals;
 }
 
 export function runSimulation(req: EngineRequest): SimulationResult {
@@ -633,37 +734,29 @@ export function runSimulation(req: EngineRequest): SimulationResult {
   const flows = buildFlows(unconstrained);
   const recommendation = greedyRecommendation(unconstrained);
 
-  type ForcedOutcome = (typeof unconstrained)[number];
-  const forcedByPos = new Map<Position, ForcedOutcome[]>();
   const forcedSims = Math.min(sims, FORCED_BRANCH_SIMS);
-  if (myNext != null && forcedSims > 0) {
-    for (const position of BRANCH_POS) {
-      if (!positionOpen(alreadyMine, settings.slots, position)) continue;
-      if (!pool.some((p) => p.position === position)) continue;
-      const outcomes: ForcedOutcome[] = [];
-      for (let s = 0; s < forcedSims; s++) {
-        const world = projectionBounds
-          ? simPlayers(req, picked, projectionBounds, rng)
-          : { pool, initialRosters };
-        const board = drawCpuBoard(world.pool, stats, rng);
-        const draft = runDraft({
-          ...shared,
-          pool: world.pool,
-          initialRosters: world.initialRosters,
-          board,
-          forcedPos: position,
+  const forcedByPos =
+    myNext != null && forcedSims > 0
+      ? runForcedPositionOutcomes({
+          innerSims: forcedSims,
+          alreadyMine,
+          pool,
+          initialRosters,
+          order,
+          currentPickNo,
           forcedPickNo: myNext,
-        });
-        const lineup = optimalLineup(draft.roster, settings.slots);
-        outcomes.push({
-          ...outcomePicks(alreadyMine, draft.myPicks),
-          ppg: lineup.starterPoints,
-          lineup,
-        });
-      }
-      forcedByPos.set(position, outcomes);
-    }
-  }
+          totalPicks,
+          mySlot,
+          slots: settings.slots,
+          rankIndex,
+          stats,
+          rng,
+          temperature,
+          simWorld: projectionBounds
+            ? () => simPlayers(req, picked, projectionBounds, rng)
+            : undefined,
+        })
+      : new Map<Position, ForcedDraftOutcome[]>();
 
   const forcedColumn = new Map<Position, { playerIds: string[]; ppg: number }[]>();
   for (const [position, outcomes] of forcedByPos) {
