@@ -170,10 +170,10 @@ describe('canDraft', () => {
 });
 
 describe('consensus rank', () => {
-  it('averages our rank, ADP, and ballers rank', () => {
+  it('takes the geometric mean of our rank, ADP, and ballers rank', () => {
     const player = mk('Star', 'RB', 200, 3, { ballersRank: 5 });
     const stats = consensusStats(player, 1);
-    expect(stats.mean).toBe(3);
+    expect(stats.mean).toBeCloseTo(Math.cbrt(15));
     expect(stats.stdev).toBe(2);
   });
 

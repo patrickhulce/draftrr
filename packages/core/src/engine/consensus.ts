@@ -13,6 +13,13 @@ export function mean(xs: number[]): number {
   return xs.reduce((sum, x) => sum + x, 0) / xs.length;
 }
 
+/** Geometric mean of positive values; 0 when none remain. */
+export function geometricMean(xs: number[]): number {
+  const vals = xs.filter((x) => x > 0);
+  if (vals.length === 0) return 0;
+  return Math.exp(mean(vals.map(Math.log)));
+}
+
 /** Sample standard deviation; 0 when fewer than two values. */
 export function sampleStdev(xs: number[]): number {
   if (xs.length < 2) return 0;
@@ -26,5 +33,5 @@ export function consensusStats(
 ): { mean: number; stdev: number } {
   const xs = rankSources(player, ourRank);
   if (xs.length === 0) return { mean: 999, stdev: 0 };
-  return { mean: mean(xs), stdev: sampleStdev(xs) };
+  return { mean: geometricMean(xs), stdev: sampleStdev(xs) };
 }
