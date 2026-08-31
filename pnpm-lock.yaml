@@ -33,6 +33,9 @@ importers:
       '@types/chrome':
         specifier: ^0.0.313
         version: 0.0.313
+      linkedom:
+        specifier: ^0.18.13
+        version: 0.18.13
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -1751,6 +1754,7 @@ packages:
   eslint@9.39.5:
     resolution: {integrity: sha512-DgZS62aPLXKlnxILS/AYCoRvHaZeXceIzlXPkkGGzJWSow1aEk0lbTlxUSlyjC8jcaKxAdOnTDz+o1JFSBsyjw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'

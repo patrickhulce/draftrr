@@ -132,7 +132,7 @@ export function DraftSetup() {
           Draft URL or ID
           <input
             className="w-full rounded-md border border-white/10 bg-ink-800 px-3 py-2"
-            placeholder="Paste your draft URL"
+            placeholder="Paste a Sleeper or ESPN draft URL"
             value={draftInput}
             onChange={(e) => setDraftInput(e.target.value)}
           />
