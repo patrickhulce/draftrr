@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@types/chrome": "^0.0.313",
+    "linkedom": "^0.18.13",
     "typescript": "^5.8.2",
     "vitest": "^3.0.9",
     "wxt": "^0.20.0"

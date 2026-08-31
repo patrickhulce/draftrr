@@ -1,5 +1,5 @@
 import { allHostMatches, providerForUrl } from '~/lib/providers';
-import { onRuntimeMessage, sendMessage } from '~/lib/runtime';
+import { extensionAlive, onRuntimeMessage, sendMessage } from '~/lib/runtime';
 
 const STALE_MS = 8000;
 
@@ -56,6 +56,7 @@ function ensureBadge() {
         provider: provider.id,
         draftId,
         draftName: provider.draftNameFromTitle(document.title),
+        snapshot: provider.readSnapshot?.(document, draftId) ?? undefined,
       },
       applyStatus,
     );
@@ -109,6 +110,12 @@ function currentDraft() {
   return { provider, draftId };
 }
 
+function currentSnapshot() {
+  const draft = currentDraft();
+  if (!draft) return undefined;
+  return draft.provider.readSnapshot?.(document, draft.draftId) ?? undefined;
+}
+
 export default defineContentScript({
   matches: allHostMatches(),
   runAt: 'document_idle',
@@ -129,6 +136,7 @@ export default defineContentScript({
           draftId: draft.draftId,
           draftName: draft.provider.draftNameFromTitle(document.title),
           board: draft.provider.readBoard?.(),
+          snapshot: draft.provider.readSnapshot?.(document, draft.draftId) ?? undefined,
         },
         applyStatus,
       );
@@ -173,6 +181,7 @@ export default defineContentScript({
         count: board?.count,
         lastName: board?.lastName,
         lastLabel: board?.lastLabel,
+        snapshot: currentSnapshot(),
       });
     };
 
@@ -180,6 +189,12 @@ export default defineContentScript({
     pollBoard();
     ctx.setInterval(beat, 3000);
     ctx.setInterval(pollBoard, 1000);
+    if (extensionAlive()) {
+      chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+        if (message?.type !== 'draftrr:read-snapshot') return;
+        sendResponse({ snapshot: currentSnapshot() ?? null });
+      });
+    }
     ctx.onInvalidated(() => {
       hideBadge();
     });

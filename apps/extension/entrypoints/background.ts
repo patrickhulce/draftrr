@@ -1,6 +1,7 @@
 import {
   WIRE_MSG,
   WIRE_VERSION,
+  isDraftSnapshot,
   type DraftSnapshot,
   type LinkState,
   type LinkStatus,
@@ -183,6 +184,29 @@ export default defineBackground(() => {
     void notify({ type: WIRE_MSG.snapshot, snapshot }, isApp);
   };
 
+  const applySnapshot = (next: DraftSnapshot, kind: string) => {
+    snapshot = next;
+    error = null;
+    fetching = false;
+    lastFetchAt = now();
+    lastFetchKind = kind;
+    lastFetchResult = 'ok';
+    pushSnapshot();
+    pushLink();
+  };
+
+  const requestSnapshotFromTab = async (tabId: number): Promise<DraftSnapshot> => {
+    try {
+      const res = (await chrome.tabs.sendMessage(tabId, { type: 'draftrr:read-snapshot' })) as {
+        snapshot?: unknown;
+      };
+      if (isDraftSnapshot(res?.snapshot)) return res.snapshot;
+    } catch {
+      /* tab has no content script */
+    }
+    throw new Error('Open the draft in this browser and click Activate.');
+  };
+
   const fetchAndPush = async (kind: string) => {
     if (!link) return;
     const current = link;
@@ -195,12 +219,16 @@ export default defineBackground(() => {
     try {
       const provider = providerById(current.providerId);
       if (!provider) throw new Error("Couldn't recognize that draft URL.");
-      const next = await provider.fetchSnapshot(current.draftId);
+      let next: DraftSnapshot;
+      if (provider.fetchSnapshot) {
+        next = await provider.fetchSnapshot(current.draftId);
+      } else if (activeTabId != null) {
+        next = await requestSnapshotFromTab(activeTabId);
+      } else {
+        throw new Error('Open the draft in this browser and click Activate.');
+      }
       if (gen !== fetchGen || link?.draftKey !== current.draftKey) return;
-      snapshot = next;
-      error = null;
-      lastFetchResult = 'ok';
-      pushSnapshot();
+      applySnapshot(next, kind);
     } catch (err) {
       if (gen !== fetchGen) return;
       error = err instanceof Error ? err.message : 'Failed to load draft';
@@ -219,7 +247,13 @@ export default defineBackground(() => {
     }, PICK_DEBOUNCE_MS);
   };
 
-  const connectTo = (providerId: string, draftId: string, kind: string, immediate: boolean) => {
+  const connectTo = (
+    providerId: string,
+    draftId: string,
+    kind: string,
+    immediate: boolean,
+    incoming?: DraftSnapshot,
+  ) => {
     const draftKey = makeDraftKey(providerId, draftId);
     const same = link?.draftKey === draftKey;
     if (!same) {
@@ -228,6 +262,10 @@ export default defineBackground(() => {
       error = null;
     }
     persist();
+    if (incoming) {
+      applySnapshot(incoming, kind);
+      return;
+    }
     if (immediate) void fetchAndPush(kind);
     else scheduleFetch(kind);
   };
@@ -374,7 +412,13 @@ export default defineBackground(() => {
           tabDraftName = message.draftName;
         }
         recordBoard(message);
-        keepAlive(providerId, draftId, 'heartbeat');
+        const incoming = isDraftSnapshot(message.snapshot) ? message.snapshot : undefined;
+        if (incoming) {
+          providerSeenAt = now();
+          connectTo(providerId, draftId, 'heartbeat', false, incoming);
+        } else {
+          keepAlive(providerId, draftId, 'heartbeat');
+        }
       }
       sendResponse(debug(sender));
       return true;
@@ -390,7 +434,8 @@ export default defineBackground(() => {
           tabDraftName = message.draftName;
         }
         providerSeenAt = now();
-        connectTo(providerId, draftId, 'activate', true);
+        const incoming = isDraftSnapshot(message.snapshot) ? message.snapshot : undefined;
+        connectTo(providerId, draftId, 'activate', true, incoming);
       }
       sendResponse(debug(sender));
       return true;
@@ -411,7 +456,9 @@ export default defineBackground(() => {
     if (message?.type === 'draftrr:board-changed') {
       if (isActiveTab(sender)) {
         recordBoard(message);
-        if (link) scheduleFetch('board');
+        const incoming = isDraftSnapshot(message.snapshot) ? message.snapshot : undefined;
+        if (incoming) applySnapshot(incoming, 'board');
+        else if (link) scheduleFetch('board');
       }
       sendResponse({ ok: true });
       return true;

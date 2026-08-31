@@ -15,6 +15,8 @@ export default defineConfig({
       'https://sleeper.app/*',
       'https://*.sleeper.app/*',
       'https://api.sleeper.app/*',
+      'https://fantasy.espn.com/*',
+      'https://*.fantasy.espn.com/*',
     ],
     action: { default_title: 'draftrr' },
   },

@@ -13,7 +13,10 @@ export interface DraftProvider {
   /** Draft id from a URL, a pasted value, or a draftKey body. */
   parseDraftId(input: string): string | null;
   draftNameFromTitle(title: string): string | null;
-  fetchSnapshot(draftId: string): Promise<DraftSnapshot>;
+  /** API-backed providers (Sleeper). DOM-backed providers omit this. */
+  fetchSnapshot?(draftId: string): Promise<DraftSnapshot>;
+  /** DOM-backed providers (ESPN). */
+  readSnapshot?(root: ParentNode, draftId: string): DraftSnapshot | null;
   /** Cheap DOM signature so we only refetch when the board actually moved. */
   boardSignature(root?: ParentNode): string | null;
   readBoard?(root?: ParentNode): BoardDebug;
