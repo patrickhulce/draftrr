@@ -1,0 +1,3 @@
+{
+  "buildCommand": "pnpm --filter @draftrr/wire --filter @draftrr/core --sort run build && next build"
+}

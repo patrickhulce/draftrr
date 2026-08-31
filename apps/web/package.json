@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
+    "prebuild": "pnpm --filter @draftrr/wire --filter @draftrr/core --sort run build",
     "build": "next build",
     "lint": "eslint app components lib && prettier --check app components lib",
     "lint:fix": "eslint --fix app components lib && prettier --write app components lib",
