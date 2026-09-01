@@ -9,6 +9,7 @@ import {
   worstCaseHighlighted,
   worstCaseProjectedAtNext,
   type EngineRequest,
+  type Player,
 } from '@draftrr/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -24,6 +25,51 @@ import { CompactRoster } from './CompactRoster';
 import { PositionBranches } from './PositionBranches';
 import { ProjectedPicks } from './ProjectedPicks';
 import { SimSummary } from './SimSummary';
+
+const RISK_UPSIDE_SCALE = 10;
+
+function formatStat(value?: number): string {
+  return value == null ? '—' : value.toFixed(1);
+}
+
+function riskFillClass(risk: number): string {
+  if (risk >= 6.6) return 'bg-rose-400';
+  if (risk >= 3.3) return 'bg-amber-400';
+  return 'bg-emerald-400';
+}
+
+function upsideFillClass(upside: number): string {
+  if (upside >= 6.6) return 'bg-emerald-400';
+  if (upside >= 3.3) return 'bg-field-400';
+  return 'bg-white/40';
+}
+
+function StatBar({ value, fillClass }: { value?: number; fillClass: (n: number) => string }) {
+  const pct = value == null ? 0 : Math.min(100, Math.max(0, (value / RISK_UPSIDE_SCALE) * 100));
+  return (
+    <span className="block h-1 w-10 overflow-hidden rounded-full bg-white/10">
+      {value != null && (
+        <span
+          className={cn('block h-full rounded-full', fillClass(value))}
+          style={{ width: `${pct}%` }}
+        />
+      )}
+    </span>
+  );
+}
+
+function RiskUpsideBars({ player }: { player: Player }) {
+  return (
+    <span className="flex shrink-0 flex-col gap-0.5">
+      <StatBar value={player.risk} fillClass={riskFillClass} />
+      <StatBar value={player.upside} fillClass={upsideFillClass} />
+    </span>
+  );
+}
+
+function playerTooltip(player: Player, rank: number): string {
+  return `Rank ${rank} · ADP ${formatStat(player.adp)} · ${formatStat(player.projectedPoints)} pts · Risk ${formatStat(player.risk)} · Upside ${formatStat(player.upside)}`;
+}
 
 export function LiveDraft({ draftId }: { draftId: string }) {
   useEffect(() => {
@@ -143,10 +189,13 @@ export function LiveDraft({ draftId }: { draftId: string }) {
     : null;
   const { result, running } = useEngine(engineReq);
 
-  const available = rankingIds
-    .filter((id) => !pickedIds.includes(id))
-    .map((id) => byId.get(id))
-    .filter((p): p is NonNullable<typeof p> => Boolean(p));
+  const picked = new Set(pickedIds);
+  const availableRows = rankingIds.flatMap((id, i) => {
+    const player = byId.get(id);
+    if (!player || picked.has(id)) return [];
+    return [{ player, rank: i + 1 }];
+  });
+  const available = availableRows.map((row) => row.player);
 
   const currentPickNo = liveSnapshot?.currentPickNo ?? reconciled.length + 1;
   const remainingGridCols = Math.max(0, REC_PICKS - (result?.lockedPickCount ?? 0));
@@ -309,10 +358,11 @@ export function LiveDraft({ draftId }: { draftId: string }) {
             data-testid="available-list"
             className="max-h-[min(640px,50vh)] space-y-1 overflow-auto"
           >
-            {available.map((p) => (
+            {availableRows.map(({ player: p, rank }) => (
               <button
                 key={p.id}
                 type="button"
+                title={playerTooltip(p, rank)}
                 onClick={() => void takeManual(p.id)}
                 className={cn(
                   'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-white/5',
@@ -321,6 +371,7 @@ export function LiveDraft({ draftId }: { draftId: string }) {
               >
                 <span className={cn('w-8', `pos-${p.position}`)}>{p.position}</span>
                 <span className="flex-1">{p.name}</span>
+                <RiskUpsideBars player={p} />
               </button>
             ))}
           </div>
