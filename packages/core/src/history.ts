@@ -38,12 +38,12 @@ export function gradeDraft(
     const valueOverAdp = roster.reduce((sum, p, i) => {
       const pick = draft.picks.find((x) => x.playerId === p.id);
       const pickNo = pick?.pickNo ?? i + 1;
-      return sum + (p.adp - pickNo);
+      return sum + (pickNo - p.adp);
     }, 0);
     const swings = roster
       .map((p) => {
         const pick = draft.picks.find((x) => x.playerId === p.id);
-        return { playerId: p.id, delta: p.adp - (pick?.pickNo ?? 0) };
+        return { playerId: p.id, delta: (pick?.pickNo ?? 0) - p.adp };
       })
       .filter((x) => Number.isFinite(x.delta));
     teams.push({
