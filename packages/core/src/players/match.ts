@@ -97,6 +97,13 @@ export function matchPlayer(query: MatchQuery, index: MatchIndex): MatchResult {
     if (dst) return { kind: 'nameKey', player: dst, candidates: [] };
   }
 
+  if (query.position === 'K' && query.team) {
+    const kickers = index.all.filter((p) => p.position === 'K' && p.team === query.team);
+    if (kickers.length === 1) {
+      return { kind: 'nameKey', player: kickers[0]!, candidates: [] };
+    }
+  }
+
   if (query.name && query.position) {
     const nk = nameKey(query.name);
     const exact = pickUnique(index.byNamePos.get(namePosKey(nk, query.position)));

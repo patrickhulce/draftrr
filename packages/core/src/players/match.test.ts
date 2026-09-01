@@ -31,6 +31,7 @@ const players = [
   p('Josh Allen', 'QB', 'BUF', { adp: 14 }),
   p('San Francisco', 'DST', 'SF', { externalId: 'SF' }),
   p('D.J. Moore', 'WR', 'CHI', { adp: 55 }),
+  p('Brandon Aubrey', 'K', 'DAL', { adp: 128 }),
 ];
 
 describe('match cascade', () => {
@@ -60,6 +61,18 @@ describe('match cascade', () => {
     const r = matchPlayer({ name: '49ers', position: 'DST', team: 'SF' }, index);
     expect(r.kind).toBe('nameKey');
     expect(r.player?.team).toBe('SF');
+  });
+
+  it('matches a kicker by name', () => {
+    const r = matchPlayer({ name: 'Brandon Aubrey', position: 'K' }, index);
+    expect(r.kind === 'nameKey' || r.kind === 'looseKey').toBe(true);
+    expect(r.player?.name).toBe('Brandon Aubrey');
+  });
+
+  it('matches a unique kicker on team code', () => {
+    const r = matchPlayer({ name: 'Cowboys K', position: 'K', team: 'DAL' }, index);
+    expect(r.kind).toBe('nameKey');
+    expect(r.player?.name).toBe('Brandon Aubrey');
   });
 
   it('uses saved aliases', () => {
