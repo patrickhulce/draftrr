@@ -2,6 +2,7 @@ import { MAX_EDIT_DISTANCE, NAME_PREFIX_LEN } from '../defaults.js';
 import type { FuzzyCandidate, MatchResult, Player, PlayerAlias, Position } from '../types.js';
 import { damerauLevenshtein } from './distance.js';
 import { looseKey, maxDistanceFor, nameKey } from './names.js';
+import { normalizeTeam } from './normalize.js';
 
 export interface MatchQuery {
   name?: string;
@@ -49,6 +50,41 @@ export function buildMatchIndex(players: Player[], aliases: PlayerAlias[] = []):
 function pickUnique(list: Player[] | undefined): Player | undefined {
   if (!list || list.length === 0) return undefined;
   if (list.length === 1) return list[0];
+  return undefined;
+}
+
+/** Yahoo Picks names look like "J. Gibbs". Require the period so "AJ Brown" stays fuzzy. */
+const INITIAL_LAST = /^([A-Za-z])\.\s+(.+)$/;
+
+function sameTeam(a?: string, b?: string): boolean {
+  if (!a || !b) return false;
+  const na = normalizeTeam(a);
+  const nb = normalizeTeam(b);
+  if (na && nb) return na === nb;
+  return a.toUpperCase() === b.toUpperCase();
+}
+
+function matchInitialLast(query: MatchQuery, index: MatchIndex): Player | undefined {
+  if (!query.name) return undefined;
+  const parsed = query.name.trim().match(INITIAL_LAST);
+  if (!parsed) return undefined;
+  const initial = parsed[1]!.toLowerCase();
+  const lastKey = nameKey(parsed[2]!);
+  if (!lastKey) return undefined;
+
+  const hits = index.all.filter((p) => {
+    if (query.position && p.position !== query.position) return false;
+    const nk = p.nameKey;
+    if (nk !== lastKey && !nk.endsWith(` ${lastKey}`)) return false;
+    const first = nk.split(' ')[0] ?? '';
+    return first.startsWith(initial);
+  });
+  if (hits.length === 0) return undefined;
+  if (hits.length === 1) return hits[0];
+  if (query.team) {
+    const teamHits = hits.filter((p) => sameTeam(p.team, query.team));
+    if (teamHits.length === 1) return teamHits[0];
+  }
   return undefined;
 }
 
@@ -116,6 +152,9 @@ export function matchPlayer(query: MatchQuery, index: MatchIndex): MatchResult {
     const alias = index.byAlias.get(lk) ?? index.byAlias.get(nk);
     if (alias) return { kind: 'alias', player: alias, candidates: [] };
   }
+
+  const initial = matchInitialLast(query, index);
+  if (initial) return { kind: 'nameKey', player: initial, candidates: [] };
 
   const candidates = findFuzzyCandidates(query, index);
   if (candidates.length > 0) {

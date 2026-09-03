@@ -32,6 +32,11 @@ const players = [
   p('San Francisco', 'DST', 'SF', { externalId: 'SF' }),
   p('D.J. Moore', 'WR', 'CHI', { adp: 55 }),
   p('Brandon Aubrey', 'K', 'DAL', { adp: 128 }),
+  p('Jahmyr Gibbs', 'RB', 'DET', { adp: 2 }),
+  p('Bijan Robinson', 'RB', 'ATL', { adp: 3 }),
+  p('Brian Robinson Jr.', 'RB', 'WAS', { adp: 80 }),
+  p('Jayden Daniels', 'QB', 'WAS', { adp: 64 }),
+  p('Jalen Hurts', 'QB', 'PHI', { adp: 66 }),
 ];
 
 describe('match cascade', () => {
@@ -95,6 +100,38 @@ describe('match cascade', () => {
     if (r.kind === 'fuzzy') {
       expect(r.candidates.every((c) => c.candidate.name !== 'A.J. Brown')).toBe(true);
     }
+  });
+
+  it('matches Yahoo-style initial last names', () => {
+    const r = matchPlayer({ name: 'J. Gibbs', position: 'RB', team: 'DET' }, index);
+    expect(r.kind).toBe('nameKey');
+    expect(r.player?.name).toBe('Jahmyr Gibbs');
+    const chase = matchPlayer({ name: 'J. Chase', position: 'WR' }, index);
+    expect(chase.kind).toBe('nameKey');
+    expect(chase.player?.name).toBe("Ja'Marr Chase");
+    const hurts = matchPlayer({ name: 'J. Hurts', position: 'QB', team: 'Phi' }, index);
+    expect(hurts.kind).toBe('nameKey');
+    expect(hurts.player?.name).toBe('Jalen Hurts');
+    const daniels = matchPlayer({ name: 'J. Daniels', position: 'QB', team: 'Was' }, index);
+    expect(daniels.kind).toBe('nameKey');
+    expect(daniels.player?.name).toBe('Jayden Daniels');
+  });
+
+  it('matches a unique initial last name without position', () => {
+    const r = matchPlayer({ name: 'J. Hurts' }, index);
+    expect(r.kind).toBe('nameKey');
+    expect(r.player?.name).toBe('Jalen Hurts');
+  });
+
+  it('uses team to split initial last-name collisions', () => {
+    const bijan = matchPlayer({ name: 'B. Robinson', position: 'RB', team: 'ATL' }, index);
+    expect(bijan.kind).toBe('nameKey');
+    expect(bijan.player?.name).toBe('Bijan Robinson');
+    const brian = matchPlayer({ name: 'B. Robinson', position: 'RB', team: 'WAS' }, index);
+    expect(brian.kind).toBe('nameKey');
+    expect(brian.player?.name).toBe('Brian Robinson Jr.');
+    const both = matchPlayer({ name: 'B. Robinson', position: 'RB' }, index);
+    expect(both.player).toBeUndefined();
   });
 
   it('requires same position and shared prefix', () => {

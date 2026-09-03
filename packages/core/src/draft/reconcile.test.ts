@@ -14,6 +14,15 @@ const chase = withKeys({
   externalId: '7564',
 });
 
+const gibbs = withKeys({
+  name: 'Jahmyr Gibbs',
+  team: 'DET',
+  position: 'RB',
+  bye: 6,
+  projectedPoints: 280,
+  adp: 2,
+});
+
 const drafted: DraftedPlayer[] = [
   {
     name: 'Ja Marr Chase',
@@ -42,5 +51,23 @@ describe('reconcileDrafted', () => {
     expect(result[0]?.pick.playerId).toBe(chase.id);
     expect(result[1]?.match.kind).toBe('unmatched');
     expect(result[1]?.pick.playerId).toBeNull();
+  });
+
+  it('matches Yahoo-style initial last names', () => {
+    const result = reconcileDrafted(
+      [
+        {
+          name: 'J. Gibbs',
+          position: 'RB',
+          team: 'Det',
+          pickNo: 1,
+          round: 1,
+          slot: 1,
+        },
+      ],
+      buildMatchIndex([chase, gibbs]),
+    );
+    expect(result[0]?.match.kind).toBe('nameKey');
+    expect(result[0]?.pick.playerId).toBe(gibbs.id);
   });
 });
