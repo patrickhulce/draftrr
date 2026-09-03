@@ -15,7 +15,7 @@ export interface DraftProvider {
   draftNameFromTitle(title: string): string | null;
   /** API-backed providers (Sleeper). DOM-backed providers omit this. */
   fetchSnapshot?(draftId: string): Promise<DraftSnapshot>;
-  /** DOM-backed providers (ESPN). */
+  /** DOM-backed providers (ESPN, Yahoo). */
   readSnapshot?(root: ParentNode, draftId: string): DraftSnapshot | null;
   /** Cheap DOM signature so we only refetch when the board actually moved. */
   boardSignature(root?: ParentNode): string | null;

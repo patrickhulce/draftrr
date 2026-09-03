@@ -136,7 +136,7 @@ function render(opts: {
 function refresh() {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs[0];
-    const tabUrl = tab?.url ?? '';
+    const tabUrl = tab?.url ?? tab?.pendingUrl ?? '';
     const provider = providerForUrl(tabUrl);
     const draftId = provider?.parseDraftId(tabUrl) ?? null;
     const tabName = provider?.draftNameFromTitle(tab?.title ?? '') ?? null;

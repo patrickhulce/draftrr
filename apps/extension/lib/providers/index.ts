@@ -1,10 +1,11 @@
 import { espnProvider } from './espn';
 import { sleeperProvider } from './sleeper';
+import { yahooProvider } from './yahoo';
 import type { DraftProvider } from './types';
 
 export type { DraftProvider } from './types';
 
-export const PROVIDERS: DraftProvider[] = [sleeperProvider, espnProvider];
+export const PROVIDERS: DraftProvider[] = [sleeperProvider, espnProvider, yahooProvider];
 
 export function allHostMatches(): string[] {
   return PROVIDERS.flatMap((provider) => provider.hostMatches);

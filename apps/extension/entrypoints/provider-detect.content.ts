@@ -1,4 +1,4 @@
-import { allHostMatches, providerForUrl } from '~/lib/providers';
+import { providerForUrl } from '~/lib/providers';
 import { extensionAlive, onRuntimeMessage, sendMessage } from '~/lib/runtime';
 
 const STALE_MS = 8000;
@@ -117,7 +117,18 @@ function currentSnapshot() {
 }
 
 export default defineContentScript({
-  matches: allHostMatches(),
+  // Keep these as string literals so WXT writes them into the manifest.
+  matches: [
+    'https://sleeper.com/*',
+    'https://*.sleeper.com/*',
+    'https://sleeper.app/*',
+    'https://*.sleeper.app/*',
+    'https://fantasy.espn.com/*',
+    'https://*.fantasy.espn.com/*',
+    'https://football.fantasysports.yahoo.com/*',
+    'https://*.fantasysports.yahoo.com/*',
+  ],
+  allFrames: true,
   runAt: 'document_idle',
   main(ctx) {
     const beat = () => {
