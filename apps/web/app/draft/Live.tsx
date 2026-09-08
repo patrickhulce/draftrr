@@ -10,6 +10,7 @@ import {
   worstCaseProjectedAtNext,
   type EngineRequest,
   type Player,
+  type RankingItem,
 } from '@draftrr/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -67,8 +68,28 @@ function RiskUpsideBars({ player }: { player: Player }) {
   );
 }
 
-function playerTooltip(player: Player, rank: number): string {
-  return `Rank ${rank} · ADP ${formatStat(player.adp)} · ${formatStat(player.projectedPoints)} pts · Risk ${formatStat(player.risk)} · Upside ${formatStat(player.upside)}`;
+function rankingBoard(
+  items: RankingItem[] | undefined,
+  fallbackIds: string[],
+): { ids: string[]; tierByPlayer: Map<string, number> } {
+  if (!items) return { ids: fallbackIds, tierByPlayer: new Map() };
+  const ids: string[] = [];
+  const tierByPlayer = new Map<string, number>();
+  let tier = 0;
+  for (const item of items) {
+    if (item.kind === 'tier') {
+      tier += 1;
+      continue;
+    }
+    ids.push(item.playerId);
+    if (tier > 0) tierByPlayer.set(item.playerId, tier);
+  }
+  return { ids, tierByPlayer };
+}
+
+function playerTooltip(player: Player, rank: number, tier?: number): string {
+  const tierPart = tier != null ? ` · Tier ${tier}` : '';
+  return `Rank ${rank}${tierPart} · ADP ${formatStat(player.adp)} · ${formatStat(player.projectedPoints)} pts · Risk ${formatStat(player.risk)} · Upside ${formatStat(player.upside)}`;
 }
 
 export function LiveDraft({ draftId }: { draftId: string }) {
@@ -155,9 +176,10 @@ export function LiveDraft({ draftId }: { draftId: string }) {
   }, [draft, drafted, index, reconciled]);
 
   const pickedIds = reconciled.map((p) => p.playerId).filter((id): id is string => Boolean(id));
-  const rankingIds =
-    ranking?.items.filter((i) => i.kind === 'player').map((i) => i.playerId) ??
-    players.map((p) => p.id);
+  const { ids: rankingIds, tierByPlayer } = rankingBoard(
+    ranking?.items,
+    players.map((p) => p.id),
+  );
 
   const mine = reconciled
     .filter((p) => p.slot === draft?.mySlot && p.playerId)
@@ -193,7 +215,7 @@ export function LiveDraft({ draftId }: { draftId: string }) {
   const availableRows = rankingIds.flatMap((id, i) => {
     const player = byId.get(id);
     if (!player || picked.has(id)) return [];
-    return [{ player, rank: i + 1 }];
+    return [{ player, rank: i + 1, tier: tierByPlayer.get(id) }];
   });
   const available = availableRows.map((row) => row.player);
 
@@ -358,11 +380,11 @@ export function LiveDraft({ draftId }: { draftId: string }) {
             data-testid="available-list"
             className="max-h-[min(640px,50vh)] space-y-1 overflow-auto"
           >
-            {availableRows.map(({ player: p, rank }) => (
+            {availableRows.map(({ player: p, rank, tier }) => (
               <button
                 key={p.id}
                 type="button"
-                title={playerTooltip(p, rank)}
+                title={playerTooltip(p, rank, tier)}
                 onClick={() => void takeManual(p.id)}
                 className={cn(
                   'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-white/5',
@@ -371,7 +393,12 @@ export function LiveDraft({ draftId }: { draftId: string }) {
               >
                 <span className={cn('w-8', `pos-${p.position}`)}>{p.position}</span>
                 <span className="flex-1">{p.name}</span>
-                <RiskUpsideBars player={p} />
+                <span className="flex shrink-0 items-center gap-1">
+                  <span className="w-5 shrink-0 text-right font-mono text-[11px] tabular-nums text-white/30">
+                    {tier ?? ''}
+                  </span>
+                  <RiskUpsideBars player={p} />
+                </span>
               </button>
             ))}
           </div>
