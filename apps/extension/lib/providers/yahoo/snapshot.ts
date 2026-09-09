@@ -25,6 +25,7 @@ const DEFAULT_SLOTS: WireRosterSlots = {
 const SLOT_KEYS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'DST', 'K', 'BENCH'] as const;
 
 const YOUR_TURN = /Your Turn - (\d+)(?:st|nd|rd|th) Pick/gi;
+const YOU_PICK = /You pick (\d+)(?:st|nd|rd|th)/i;
 
 const seenByDraft = new Map<string, Map<number, DraftedPlayer>>();
 
@@ -52,11 +53,14 @@ function draftNameFromRoot(root: ParentNode): string | null {
 
 function teamsFromRoot(root: ParentNode): Map<number, string> {
   const out = new Map<number, string>();
+  const seen = new Set<string>();
+  // `data-id` is the Yahoo team key, not draft slot. Unique teams appear in
+  // snake order (round 1 left-to-right, then reverse), so first-seen index is slot.
   for (const el of root.querySelectorAll('.ys-team[data-id]')) {
-    const slot = Number(el.getAttribute('data-id'));
-    if (!Number.isFinite(slot) || slot <= 0 || out.has(slot)) continue;
-    const name = textOf(el);
-    if (name) out.set(slot, name);
+    const id = el.getAttribute('data-id');
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.set(out.size + 1, textOf(el));
   }
   return out;
 }
@@ -66,6 +70,19 @@ function mySlotFromTeams(teams: Map<number, string>): number | null {
     if (name === 'You') return slot;
   }
   return null;
+}
+
+function mySlotFromYouPick(root: ParentNode, teams: number): number | null {
+  const m = blobOf(root).match(YOU_PICK);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n >= 1 && n <= teams ? n : null;
+}
+
+function mySlotFromTurns(picks: number[], teams: number): number | null {
+  const round1 = picks.filter((p) => p >= 1 && p <= teams);
+  if (!round1.length) return null;
+  return Math.min(...round1);
 }
 
 function yourTurnPicks(root: ParentNode): number[] {
@@ -244,8 +261,9 @@ export function snapshotFromYahoo(
   const warnings: string[] = [];
   const teamMap = teamsFromRoot(root);
   const teams = teamMap.size || DEFAULT_TEAMS;
-  const mySlot = mySlotFromTeams(teamMap);
   const turns = yourTurnPicks(root);
+  const mySlot =
+    mySlotFromYouPick(root, teams) ?? mySlotFromTurns(turns, teams) ?? mySlotFromTeams(teamMap);
   const draftType = draftTypeFromTurns(turns, teams, mySlot, warnings);
   const slots = { ...DEFAULT_SLOTS };
   const scoring = DEFAULT_SCORING;

@@ -77,6 +77,30 @@ describe('snapshotFromYahoo', () => {
     expect(snap!.updatedAt).toBe(1);
   });
 
+  it('uses draft order, not Yahoo team id, for your slot', () => {
+    const order = [4, 6, 10, 1, 3, 5, 2, 8, 7, 9];
+    const html = `<html><head><title>You pick 10th | Live NFL Draft | Yahoo Fantasy Sports</title></head>
+      <body><div id="main-0-DraftClientBootstrap-Proxy">
+      <span>Yahoo Fantasy Football Draft</span>
+      <span>Shuffled League</span>
+      ${order.map((id) => `<div class="ys-team" data-id="${id}">${id === 9 ? 'You' : `T${id}`}</div>`).join('')}
+      </div></body></html>`;
+    const snap = snapshotFromYahoo(load(html), '1426608', 1);
+    expect(snap?.teams).toBe(10);
+    expect(snap?.mySlot).toBe(10);
+  });
+
+  it('reads slot from board order when the title does not say You pick', () => {
+    const order = [4, 6, 10, 1, 3, 5, 2, 8, 7, 9];
+    const html = `<div id="main-0-DraftClientBootstrap-Proxy">
+      <span>Yahoo Fantasy Football Draft</span>
+      <span>Shuffled League</span>
+      ${order.map((id) => `<div class="ys-team" data-id="${id}">${id === 9 ? 'You' : `T${id}`}</div>`).join('')}
+    </div>`;
+    const snap = snapshotFromYahoo(load(html), '1426608', 1);
+    expect(snap?.mySlot).toBe(10);
+  });
+
   it('maps the Board-tab fixture with full names', () => {
     const snap = snapshotFromYahoo(load(fixtureBoard), '10523945', 1);
     expect(snap).not.toBeNull();
