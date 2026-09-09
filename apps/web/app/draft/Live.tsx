@@ -116,8 +116,20 @@ export function LiveDraft({ draftId }: { draftId: string }) {
   const [overrides, setOverrides] = useState<Record<number, string | null>>({});
 
   useEffect(() => {
-    if (!draft || !snapshot?.draftKey || snapshot.draftKey === draft.draftKey) return;
-    void db.drafts.update(draft.id, { draftKey: snapshot.draftKey, updatedAt: Date.now() });
+    if (!draft || !snapshot) return;
+    const patch: { draftKey?: string; mySlot?: number; updatedAt: number } = {
+      updatedAt: Date.now(),
+    };
+    if (snapshot.draftKey && snapshot.draftKey !== draft.draftKey) {
+      patch.draftKey = snapshot.draftKey;
+    }
+    const sameDraft = (patch.draftKey ?? draft.draftKey) === snapshot.draftKey;
+    if (sameDraft && snapshot.mySlot != null && snapshot.mySlot !== draft.mySlot) {
+      patch.mySlot = snapshot.mySlot;
+    }
+    if (patch.draftKey || patch.mySlot != null) {
+      void db.drafts.update(draft.id, patch);
+    }
   }, [draft, snapshot]);
 
   const index = useMemo(() => buildMatchIndex(players, aliases), [players, aliases]);
